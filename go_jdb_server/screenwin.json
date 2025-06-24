@@ -1,0 +1,175 @@
+[
+    {
+        "playerWin": 30,
+        "quantityWinResult": [
+            {
+                "hitSymbol": 5, //要消失的元素
+                "hitCount": 8, //消失的数量
+                "hitOdds": 30,//payTable 赔率
+                "quantityWin": 30,
+                "screenHitData": [  //每列元素对应位置是否待消失 
+                    [
+                        false,
+                        false,
+                        true,
+                        true,
+                        true
+                    ],
+                    [
+                        false,
+                        false,
+                        false,
+                        false,
+                        false
+                    ],
+                    [
+                        false,
+                        false,
+                        false,
+                        false,
+                        false
+                    ],
+                    [
+                        true,
+                        true,
+                        false,
+                        false,
+                        false
+                    ],
+                    [
+                        false,
+                        true,
+                        true,
+                        false,
+                        false
+                    ],
+                    [
+                        true,
+                        false,
+                        false,
+                        false,
+                        false
+                    ]
+                ]
+            }
+        ],
+        "gameWinType": "QuantityGame"
+    },
+    {
+        "playerWin": 16,
+        "quantityWinResult": [
+            {
+                "hitSymbol": 7,
+                "hitCount": 8,
+                "hitOdds": 16,
+                "quantityWin": 16,
+                "screenHitData": [
+                    [
+                        false,
+                        false,
+                        false,
+                        true,
+                        true
+                    ],
+                    [
+                        true,
+                        true,
+                        false,
+                        false,
+                        false
+                    ],
+                    [
+                        false,
+                        false,
+                        false,
+                        false,
+                        true
+                    ],
+                    [
+                        true,
+                        false,
+                        true,
+                        true,
+                        false
+                    ],
+                    [
+                        false,
+                        false,
+                        false,
+                        false,
+                        false
+                    ],
+                    [
+                        false,
+                        false,
+                        false,
+                        false,
+                        false
+                    ]
+                ]
+            }
+        ],
+        "gameWinType": "QuantityGame"
+    },
+    {
+        "playerWin": 8,
+        "quantityWinResult": [
+            {
+                "hitSymbol": 9,
+                "hitCount": 9,
+                "hitOdds": 8,
+                "quantityWin": 8,
+                "screenHitData": [
+                    [
+                        false,
+                        true,
+                        true,
+                        false,
+                        false
+                    ],
+                    [
+                        false,
+                        false,
+                        false,
+                        false,
+                        false
+                    ],
+                    [
+                        true,
+                        false,
+                        false,
+                        false,
+                        false
+                    ],
+                    [
+                        true,
+                        true,
+                        false,
+                        false,
+                        false
+                    ],
+                    [
+                        false,
+                        true,
+                        true,
+                        true,
+                        true
+                    ],
+                    [
+                        false,
+                        false,
+                        false,
+                        false,
+                        false
+                    ]
+                ]
+            }
+        ],
+        "gameWinType": "QuantityGame"
+    },
+    {
+        "playerWin": 0,
+        "quantityWinResult": [],
+        "gameWinType": "QuantityGame"
+    }
+]

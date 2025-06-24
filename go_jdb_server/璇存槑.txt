@@ -1,0 +1,125 @@
+1、登陆请求
+map[
+  p: map[ // 主体数据部分 payload
+    additionalParams: map[] // 额外参数，目前为空，可用于附加扩展信息
+    currency: "USD"         // 使用的货币单位（例如用于游戏下注）
+    jurisdiction: "CW"      // 所在司法辖区代码（如 Curaçao）
+    lang: "en"              // 语言标识（英文）
+    platform: map[          // 平台相关信息
+      deviceInfo: {         // 设备详细信息（JSON字符串形式）
+        "userAgent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N)...", 
+        "os": "Android",                     // 操作系统
+        "browser": "Chrome",                 // 浏览器名称
+        "device": "Nexus Phone",             // 设备名称
+        "os_version": "unknown",             // 系统版本（未知）
+        "browser_version": "135.0.0.0",      // 浏览器版本
+        "deviceType": "mobile",              // 设备类型（手机）
+        "orientation": "portrait"            // 屏幕方向
+      }
+      deviceType: "mobile"                   // 再次声明设备类型（字符串）
+      userAgent: "Mozilla/5.0 (...)"         // User-Agent 信息（可用于防作弊或适配）
+    ]
+    sessionToken: "LyO1fvdRRK..."            // 会话 Token（前端用于鉴权）
+    token: "WWQEAtuiA4CRko..."               // 用户授权令牌（可能用于登录验证）
+    version: "2.1.35-hotfix"                 // 客户端版本号
+  ]
+
+  pw:                                       // 密码字段（为空或省略，常见于试玩用户）
+  un: "10939&&demo"                         // 用户名（格式为用户ID&&账户名）
+  zn: "mines"                               // zone 名称（游戏逻辑空间或房间域）
+]
+2、登陆响应
+loginResp := map[string]interface{}{
+	// rs: 登录结果码（Result Status），0 表示成功
+	"rs": int16(0), // short
+
+	// zn: zone 名称
+	"zn": "mines", // utf_string
+
+	// un: 用户名（如含 uid+后缀）
+	"un": "10939&&demo", // utf_string
+
+	// pi: player id（登录时的 player index）
+	"pi": int16(0), // short
+
+	// rl: 房间列表，sfs_array，嵌套结构
+	"rl": []interface{}{
+		[]interface{}{
+			int(16),           // 房间 ID
+			"main",            // 房间名称
+			"default",         // 群组 ID
+			false,             // 是否私有
+			false,             // 是否游戏房间
+			false,             // 是否隐藏
+			int16(54),         // 最大用户数
+			int16(10000),      // 最大观众数
+			[]interface{}{},   // 房间变量（此处为空数组）
+		},
+	},
+
+	// id: 用户 ID（如 SmartFox Server 分配）
+	"id": int(3257050), // int
+}
+
+
+
+//spin参数
+	(utf_string) c: h5.spin
+	(int) r: -1
+	(sfs_object) p: 
+		(sfs_object) entity: 
+			(utf_string) denom: 10
+			(utf_string) extraBetType: NoExtraBet
+			(utf_string) gameStateId: 0
+			(utf_string) playerBet: 20
+			(utf_string) buyFeatureType: null
+			(sfs_object) betRequest: 
+				(utf_string) betType: QuantityGame
+				(int) quantityBet: 1
+
+//特色1
+	(utf_string) c: h5.feature
+	(int) r: -1
+	(sfs_object) p: 
+		(utf_string) code: h5.feature
+		(sfs_object) entity: 
+			(int) featureId: 0
+//特色2
+
+	(utf_string) c: h5.feature
+	(int) r: -1
+	(sfs_object) p: 
+		(utf_string) code: h5.feature
+		(sfs_object) entity: 
+			(int) featureId: 1
+//特色3
+
+	(utf_string) c: h5.feature
+	(int) r: -1
+	(sfs_object) p: 
+		(utf_string) code: h5.feature
+		(sfs_object) entity: 
+			(int) featureId: 2
+
+
+      	(sfs_object) p: 
+		(byte_array) entity: 123,34,114,101,115,117,108,116,34,58,34,79,75,34,125
+		
+	
+	(utf_string) c: h5.featureResponse
+
+
+
+  //feature buyFeatureType
+  	(utf_string) c: h5.spin
+	(int) r: -1
+	(sfs_object) p: 
+		(sfs_object) entity: 
+			(utf_string) denom: 10
+			(utf_string) extraBetType: NoExtraBet
+			(utf_string) gameStateId: 0
+			(utf_string) playerBet: 20
+			(utf_string) buyFeatureType: BuyFeature_01
+			(sfs_object) betRequest: 
+				(utf_string) betType: QuantityGame
+				(int) quantityBet: 1
