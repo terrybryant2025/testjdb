@@ -1,0 +1,1891 @@
+{
+  "spinResult": {
+    "gameStateCount": 4,
+    "gameStateResult": [
+      {
+        "gameStateId": 0,
+        "currentState": 1,
+        "gameStateType": "GS_001",
+        "roundCount": 0,
+        "stateWin": 0
+      },
+      {
+        "gameStateId": 1,
+        "currentState": 2,
+        "gameStateType": "GS_003",
+        "roundCount": 1,
+        "roundResult": [
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  7,
+                  1,
+                  5
+                ],
+                [
+                  5,
+                  5,
+                  1
+                ],
+                [
+                  8,
+                  9,
+                  1
+                ],
+                [
+                  8,
+                  1,
+                  9
+                ],
+                [
+                  9,
+                  1,
+                  4
+                ]
+              ],
+              "dampInfo": [
+                [
+                  3,
+                  3
+                ],
+                [
+                  5,
+                  7
+                ],
+                [
+                  8,
+                  3
+                ],
+                [
+                  8,
+                  9
+                ],
+                [
+                  6,
+                  7
+                ]
+              ]
+            },
+            "specialFeatureResult": [
+              {
+                "specialHitPattern": "HP_88",
+                "triggerEvent": "Trigger_01",
+                "specialScreenHitData": [
+                  [
+                    false,
+                    true,
+                    false
+                  ],
+                  [
+                    false,
+                    false,
+                    true
+                  ],
+                  [
+                    false,
+                    false,
+                    true
+                  ],
+                  [
+                    false,
+                    true,
+                    false
+                  ],
+                  [
+                    false,
+                    true,
+                    false
+                  ]
+                ],
+                "specialScreenWin": 0
+              }
+            ],
+            "progressResult": {
+              "maxTriggerFlag": true,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 1,
+                "totalRound": 1,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 0,
+                "afterSpinFirstStateOnlyBasePayAccWin": 0,
+                "beforeSpinAccWin": 0,
+                "afterSpinAccWin": 0
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    true
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          }
+        ],
+        "stateWin": 0
+      },
+      {
+        "gameStateId": 2,
+        "currentState": 3,
+        "gameStateType": "GS_095",
+        "roundCount": 12,
+        "roundResult": [
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  6,
+                  6,
+                  2
+                ],
+                [
+                  8,
+                  3,
+                  7
+                ],
+                [
+                  9,
+                  8,
+                  3
+                ],
+                [
+                  8,
+                  3,
+                  7
+                ],
+                [
+                  6,
+                  1,
+                  4
+                ]
+              ],
+              "dampInfo": [
+                [
+                  7,
+                  9
+                ],
+                [
+                  7,
+                  1
+                ],
+                [
+                  3,
+                  1
+                ],
+                [
+                  6,
+                  8
+                ],
+                [
+                  9,
+                  8
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 1,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "1"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 1,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 0,
+                "afterSpinFirstStateOnlyBasePayAccWin": 0,
+                "beforeSpinAccWin": 0,
+                "afterSpinAccWin": 0
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 60,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  7,
+                  8,
+                  3
+                ],
+                [
+                  7,
+                  8,
+                  3
+                ],
+                [
+                  6,
+                  5,
+                  7
+                ],
+                [
+                  1,
+                  7,
+                  3
+                ],
+                [
+                  4,
+                  4,
+                  4
+                ]
+              ],
+              "dampInfo": [
+                [
+                  1,
+                  6
+                ],
+                [
+                  0,
+                  7
+                ],
+                [
+                  7,
+                  8
+                ],
+                [
+                  2,
+                  5
+                ],
+                [
+                  9,
+                  8
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 2,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "2"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 2,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 0,
+                "afterSpinFirstStateOnlyBasePayAccWin": 60,
+                "beforeSpinAccWin": 0,
+                "afterSpinAccWin": 60
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 60,
+              "wayWinResult": [
+                {
+                  "symbolId": 7,
+                  "hitDirection": "LeftToRight",
+                  "hitNumber": 4,
+                  "hitCount": 1,
+                  "hitOdds": 60,
+                  "symbolWin": 60,
+                  "screenHitData": [
+                    [
+                      true,
+                      false,
+                      false
+                    ],
+                    [
+                      true,
+                      false,
+                      false
+                    ],
+                    [
+                      false,
+                      false,
+                      true
+                    ],
+                    [
+                      false,
+                      true,
+                      false
+                    ],
+                    [
+                      false,
+                      false,
+                      false
+                    ]
+                  ]
+                }
+              ],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 45,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  9,
+                  7,
+                  1
+                ],
+                [
+                  4,
+                  8,
+                  7
+                ],
+                [
+                  0,
+                  3,
+                  9
+                ],
+                [
+                  5,
+                  5,
+                  5
+                ],
+                [
+                  6,
+                  9,
+                  2
+                ]
+              ],
+              "dampInfo": [
+                [
+                  2,
+                  6
+                ],
+                [
+                  4,
+                  1
+                ],
+                [
+                  8,
+                  1
+                ],
+                [
+                  9,
+                  2
+                ],
+                [
+                  2,
+                  1
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 3,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "3"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 3,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 60,
+                "afterSpinFirstStateOnlyBasePayAccWin": 105,
+                "beforeSpinAccWin": 60,
+                "afterSpinAccWin": 105
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 45,
+              "wayWinResult": [
+                {
+                  "symbolId": 7,
+                  "hitDirection": "LeftToRight",
+                  "hitNumber": 3,
+                  "hitCount": 1,
+                  "hitOdds": 45,
+                  "symbolWin": 45,
+                  "screenHitData": [
+                    [
+                      false,
+                      true,
+                      false
+                    ],
+                    [
+                      false,
+                      false,
+                      true
+                    ],
+                    [
+                      true,
+                      false,
+                      false
+                    ],
+                    [
+                      false,
+                      false,
+                      false
+                    ],
+                    [
+                      false,
+                      false,
+                      false
+                    ]
+                  ]
+                }
+              ],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  6,
+                  4,
+                  1
+                ],
+                [
+                  9,
+                  5,
+                  7
+                ],
+                [
+                  7,
+                  2,
+                  1
+                ],
+                [
+                  9,
+                  8,
+                  6
+                ],
+                [
+                  9,
+                  1,
+                  4
+                ]
+              ],
+              "dampInfo": [
+                [
+                  3,
+                  9
+                ],
+                [
+                  7,
+                  8
+                ],
+                [
+                  6,
+                  9
+                ],
+                [
+                  3,
+                  5
+                ],
+                [
+                  6,
+                  7
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 4,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "4"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 4,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 105,
+                "afterSpinFirstStateOnlyBasePayAccWin": 105,
+                "beforeSpinAccWin": 105,
+                "afterSpinAccWin": 105
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  1,
+                  3,
+                  7
+                ],
+                [
+                  7,
+                  7,
+                  1
+                ],
+                [
+                  1,
+                  9,
+                  6
+                ],
+                [
+                  2,
+                  2,
+                  2
+                ],
+                [
+                  2,
+                  8,
+                  9
+                ]
+              ],
+              "dampInfo": [
+                [
+                  6,
+                  2
+                ],
+                [
+                  7,
+                  8
+                ],
+                [
+                  2,
+                  4
+                ],
+                [
+                  6,
+                  6
+                ],
+                [
+                  7,
+                  1
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 5,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "5"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 5,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 105,
+                "afterSpinFirstStateOnlyBasePayAccWin": 105,
+                "beforeSpinAccWin": 105,
+                "afterSpinAccWin": 105
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 900,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  1,
+                  2,
+                  7
+                ],
+                [
+                  6,
+                  5,
+                  0
+                ],
+                [
+                  2,
+                  8,
+                  8
+                ],
+                [
+                  5,
+                  6,
+                  2
+                ],
+                [
+                  9,
+                  1,
+                  3
+                ]
+              ],
+              "dampInfo": [
+                [
+                  7,
+                  4
+                ],
+                [
+                  7,
+                  7
+                ],
+                [
+                  5,
+                  4
+                ],
+                [
+                  8,
+                  2
+                ],
+                [
+                  8,
+                  7
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 6,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "6"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 6,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 105,
+                "afterSpinFirstStateOnlyBasePayAccWin": 1005,
+                "beforeSpinAccWin": 105,
+                "afterSpinAccWin": 1005
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 900,
+              "wayWinResult": [
+                {
+                  "symbolId": 2,
+                  "hitDirection": "LeftToRight",
+                  "hitNumber": 4,
+                  "hitCount": 1,
+                  "hitOdds": 900,
+                  "symbolWin": 900,
+                  "screenHitData": [
+                    [
+                      false,
+                      true,
+                      false
+                    ],
+                    [
+                      false,
+                      false,
+                      true
+                    ],
+                    [
+                      true,
+                      false,
+                      false
+                    ],
+                    [
+                      false,
+                      false,
+                      true
+                    ],
+                    [
+                      false,
+                      false,
+                      false
+                    ]
+                  ]
+                }
+              ],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  6,
+                  5,
+                  9
+                ],
+                [
+                  3,
+                  7,
+                  5
+                ],
+                [
+                  8,
+                  4,
+                  1
+                ],
+                [
+                  7,
+                  7,
+                  1
+                ],
+                [
+                  8,
+                  6,
+                  4
+                ]
+              ],
+              "dampInfo": [
+                [
+                  7,
+                  3
+                ],
+                [
+                  1,
+                  8
+                ],
+                [
+                  8,
+                  6
+                ],
+                [
+                  5,
+                  3
+                ],
+                [
+                  4,
+                  5
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 7,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "7"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 7,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 1005,
+                "afterSpinFirstStateOnlyBasePayAccWin": 1005,
+                "beforeSpinAccWin": 1005,
+                "afterSpinAccWin": 1005
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  9,
+                  2,
+                  7
+                ],
+                [
+                  8,
+                  1,
+                  6
+                ],
+                [
+                  0,
+                  3,
+                  7
+                ],
+                [
+                  5,
+                  7,
+                  6
+                ],
+                [
+                  9,
+                  4,
+                  4
+                ]
+              ],
+              "dampInfo": [
+                [
+                  1,
+                  6
+                ],
+                [
+                  4,
+                  2
+                ],
+                [
+                  8,
+                  1
+                ],
+                [
+                  7,
+                  3
+                ],
+                [
+                  6,
+                  4
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 8,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "8"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 8,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 1005,
+                "afterSpinFirstStateOnlyBasePayAccWin": 1005,
+                "beforeSpinAccWin": 1005,
+                "afterSpinAccWin": 1005
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  1,
+                  6,
+                  3
+                ],
+                [
+                  4,
+                  7,
+                  3
+                ],
+                [
+                  8,
+                  6,
+                  6
+                ],
+                [
+                  6,
+                  8,
+                  9
+                ],
+                [
+                  8,
+                  5,
+                  4
+                ]
+              ],
+              "dampInfo": [
+                [
+                  7,
+                  8
+                ],
+                [
+                  8,
+                  5
+                ],
+                [
+                  1,
+                  0
+                ],
+                [
+                  3,
+                  5
+                ],
+                [
+                  8,
+                  8
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 9,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "9"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 9,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 1005,
+                "afterSpinFirstStateOnlyBasePayAccWin": 1005,
+                "beforeSpinAccWin": 1005,
+                "afterSpinAccWin": 1005
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  8,
+                  2,
+                  5
+                ],
+                [
+                  9,
+                  8,
+                  2
+                ],
+                [
+                  7,
+                  1,
+                  9
+                ],
+                [
+                  9,
+                  5,
+                  6
+                ],
+                [
+                  1,
+                  4,
+                  7
+                ]
+              ],
+              "dampInfo": [
+                [
+                  7,
+                  7
+                ],
+                [
+                  7,
+                  0
+                ],
+                [
+                  6,
+                  8
+                ],
+                [
+                  1,
+                  6
+                ],
+                [
+                  9,
+                  2
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 10,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "10"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 10,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 1005,
+                "afterSpinFirstStateOnlyBasePayAccWin": 1005,
+                "beforeSpinAccWin": 1005,
+                "afterSpinAccWin": 1005
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  4,
+                  6,
+                  7
+                ],
+                [
+                  5,
+                  8,
+                  1
+                ],
+                [
+                  4,
+                  1,
+                  6
+                ],
+                [
+                  7,
+                  1,
+                  3
+                ],
+                [
+                  8,
+                  9,
+                  0
+                ]
+              ],
+              "dampInfo": [
+                [
+                  9,
+                  3
+                ],
+                [
+                  3,
+                  5
+                ],
+                [
+                  8,
+                  7
+                ],
+                [
+                  7,
+                  6
+                ],
+                [
+                  3,
+                  3
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 11,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "11"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 11,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 1005,
+                "afterSpinFirstStateOnlyBasePayAccWin": 1005,
+                "beforeSpinAccWin": 1005,
+                "afterSpinAccWin": 1005
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          },
+          {
+            "roundWin": 0,
+            "screenResult": {
+              "tableIndex": 0,
+              "screenSymbol": [
+                [
+                  1,
+                  9,
+                  2
+                ],
+                [
+                  5,
+                  8,
+                  1
+                ],
+                [
+                  4,
+                  5,
+                  6
+                ],
+                [
+                  1,
+                  9,
+                  5
+                ],
+                [
+                  4,
+                  4,
+                  8
+                ]
+              ],
+              "dampInfo": [
+                [
+                  4,
+                  7
+                ],
+                [
+                  3,
+                  5
+                ],
+                [
+                  7,
+                  7
+                ],
+                [
+                  3,
+                  6
+                ],
+                [
+                  4,
+                  6
+                ]
+              ]
+            },
+            "extendGameStateResult": {
+              "roundOdds": 12,
+              "extendWin": 0,
+              "gameDescriptor": {
+                "version": 1,
+                "component": [
+                  [
+                    {
+                      "type": "label",
+                      "value": "odds"
+                    },
+                    {
+                      "type": "label",
+                      "value": "colon"
+                    },
+                    {
+                      "type": "text",
+                      "value": "12"
+                    }
+                  ]
+                ]
+              }
+            },
+            "progressResult": {
+              "maxTriggerFlag": false,
+              "stepInfo": {
+                "currentStep": 1,
+                "addStep": 0,
+                "totalStep": 1
+              },
+              "stageInfo": {
+                "currentStage": 1,
+                "totalStage": 1,
+                "addStage": 0
+              },
+              "roundInfo": {
+                "currentRound": 12,
+                "totalRound": 12,
+                "addRound": 0
+              }
+            },
+            "displayResult": {
+              "accumulateWinResult": {
+                "beforeSpinFirstStateOnlyBasePayAccWin": 1005,
+                "afterSpinFirstStateOnlyBasePayAccWin": 1005,
+                "beforeSpinAccWin": 1005,
+                "afterSpinAccWin": 1005
+              },
+              "readyHandResult": {
+                "displayMethod": [
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ],
+                  [
+                    false
+                  ]
+                ]
+              },
+              "boardDisplayResult": {
+                "winRankType": "Nothing",
+                "displayBet": 0
+              }
+            },
+            "gameResult": {
+              "playerWin": 0,
+              "wayWinResult": [],
+              "gameWinType": "WayGame"
+            }
+          }
+        ],
+        "stateWin": 1005
+      },
+      {
+        "gameStateId": 3,
+        "currentState": 4,
+        "gameStateType": "GS_002",
+        "roundCount": 0,
+        "stateWin": 0
+      }
+    ],
+    "totalWin": 1005,
+    "boardDisplayResult": {
+      "winRankType": "Nothing",
+      "scoreType": "Nothing",
+      "displayBet": 50
+    },
+    "gameFlowResult": {
+      "IsBoardEndFlag": true,
+      "currentSystemStateId": 3,
+      "systemStateIdOptions": [
+        0,
+        997
+      ]
+    }
+  },
+  "ts": 1749615473563,
+  "balance": 2008.05,
+  "gameSeq": 7519343882438
+}
