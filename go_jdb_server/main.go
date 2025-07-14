@@ -2,15 +2,14 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -44,15 +43,20 @@ type GameState struct {
 	RoundResult   []RoundResult `json:"roundResult,omitempty"` // 回合结果列表
 	StateWin      int           `json:"stateWin"`              // 状态赢分
 }
-
+type SpecialFeatureResult struct {
+	SpecialHitPattern    string   `json:"specialHitPattern,omitempty"`
+	TriggerEvent         string   `json:"triggerEvent,omitempty"`
+	SpecialScreenHitData [][]bool `json:"specialScreenHitData,omitempty"`
+	SpecialScreenWin     int      `json:"specialScreenWin"`
+}
 type RoundResult struct {
-	RoundWin             int                   `json:"roundWin"`              // 回合赢分
-	ScreenResult         ScreenResult          `json:"screenResult"`          // 屏幕结果
-	ExtendGameState      *ExtendGameState      `json:"extendGameStateResult"` // 扩展游戏状态
-	SpecialFeatureResult *SpecialFeatureResult `json:"specialFeatureResult"`  // 特殊游戏状态
-	ProgressResult       ProgressResult        `json:"progressResult"`        // 进度结果
-	DisplayResult        DisplayResult         `json:"displayResult"`         // 显示结果
-	GameResult           GameResult            `json:"gameResult"`            // 游戏结果
+	RoundWin              int                    `json:"roundWin"`                       // 回合赢分
+	ScreenResult          ScreenResult           `json:"screenResult"`                   // 屏幕结果
+	ExtendGameStateResult ExtendGameStateResult  `json:"extendGameStateResult"`          // 扩展游戏状态
+	ProgressResult        ProgressResult         `json:"progressResult"`                 // 进度结果
+	DisplayResult         DisplayResult          `json:"displayResult"`                  // 显示结果
+	GameResult            GameResult             `json:"gameResult"`                     // 游戏结果
+	SpecialFeatureResult  []SpecialFeatureResult `json:"specialFeatureResult,omitempty"` //特殊模式
 }
 
 type ScreenResult struct {
@@ -62,17 +66,23 @@ type ScreenResult struct {
 }
 
 type ExtendGameState struct {
-	ScreenScatterTwoPositionList [][][]int       `json:"screenScatterTwoPositionList"` // 散布符号2位置列表
-	ScreenMultiplier             []interface{}   `json:"screenMultiplier"`             // 屏幕倍数
-	RoundMultiplier              int             `json:"roundMultiplier"`              // 回合倍数
-	ScreenWinsInfo               []ScreenWinInfo `json:"screenWinsInfo"`               // 屏幕获胜信息
-	ExtendWin                    int             `json:"extendWin"`                    // 扩展赢分
-	GameDescriptor               GameDescriptor  `json:"gameDescriptor"`               // 游戏描述符
-
-	// 新增
-	RoundOdds int `json:"roundOdds"`
 }
-
+type ExtendGameStateResult struct {
+	ScreenScatterTwoPositionList [][][]int       `json:"screenScatterTwoPositionList,omitempty"` // 散布符号2位置列表
+	ScreenMultiplier             []interface{}   `json:"screenMultiplier,omitempty"`             // 屏幕倍数
+	RoundMultiplier              int             `json:"roundMultiplier,omitempty"`              // 回合倍数
+	ScreenWinsInfo               []ScreenWinInfo `json:"screenWinsInfo,omitempty"`               // 屏幕获胜信息
+	GameDescriptor               GameDescriptor  `json:"gameDescriptor,omitempty"`
+	// ✅ 补充字段：根据 JSON 中存在的字段添加
+	ReSpinFlag       bool    `json:"reSpinFlag,omitempty"`   // 是否触发再旋转
+	ReSpinTimes      int     `json:"reSpinTimes,omitempty"`  // 再旋转次数
+	ColumnRecord     int     `json:"columnRecord,omitempty"` // 列记录标记
+	SquintFlag       bool    `json:"squintFlag,omitempty"`   // 是否为斜视状态
+	ExtendWin        int     `json:"extendWin,omitempty"`    // 扩展赢分
+	ScreenSymbol     [][]int `json:"screenSymbol,omitempty"` // 屏幕符号矩阵
+	DampInfo         [][]int `json:"dampInfo,omitempty"`     // 衰减信息
+	TriggerMusicFlag bool    `json:"triggerMusicFlag,omitempty"`
+}
 type ScreenWinInfo struct {
 	PlayerWin         int           `json:"playerWin"`         // 玩家赢分
 	QuantityWinResult []interface{} `json:"quantityWinResult"` // 数量获胜结果
@@ -80,11 +90,19 @@ type ScreenWinInfo struct {
 }
 
 type GameDescriptor struct {
-	Version          int             `json:"version"`          // 版本号
-	CascadeComponent [][]interface{} `json:"cascadeComponent"` // 级联组件
+	Version          int               `json:"version"`          // 版本号
+	CascadeComponent [][]interface{}   `json:"cascadeComponent"` // 级联组件
+	Component        [][]ComponentItem `json:"component"`
+}
+type Placeholder struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
 
-	// 新增
-	Component [][]TypVal `json:"component"`
+type ComponentItem struct {
+	Type         string        `json:"type"`
+	Value        string        `json:"value"`
+	Placeholders []Placeholder `json:"placeholders"`
 }
 
 type ProgressResult struct {
@@ -136,17 +154,17 @@ type BoardDisplay struct {
 }
 
 type GameResult struct {
-	PlayerWin              int                 `json:"playerWin"`              // 玩家赢分
-	QuantityGameResult     *QuantityGameResult `json:"quantityGameResult"`     // 数量游戏结果
-	WayWinResult           []*WayWinData       `json:"wayWinResult"`           // 滚轮游戏结果
-	CascadeEliminateResult []interface{}       `json:"cascadeEliminateResult"` // 级联消除结果
-	GameWinType            string              `json:"gameWinType"`            // 游戏获胜类型
+	PlayerWin int `json:"playerWin"` // 玩家赢分
+	// QuantityGameResult     QuantityGameResult `json:"quantityGameResult,omitempty"`     // 数量游戏结果
+	CascadeEliminateResult []interface{}   `json:"cascadeEliminateResult,omitempty"` // 级联消除结果
+	GameWinType            string          `json:"gameWinType,omitempty"`            // 游戏获胜类型
+	LineWinResult          []LineWinResult `json:"lineWinResult"`                    // 线型中奖明细
 }
 
 type QuantityGameResult struct {
-	PlayerWin         int           `json:"playerWin"`         // 玩家赢分
-	QuantityWinResult []interface{} `json:"quantityWinResult"` // 数量获胜结果
-	GameWinType       string        `json:"gameWinType"`       // 游戏获胜类型
+	PlayerWin         int           `json:"playerWin,omitempty"`         // 玩家赢分
+	QuantityWinResult []interface{} `json:"quantityWinResult,omitempty"` // 数量获胜结果
+	GameWinType       string        `json:"gameWinType,omitempty"`       // 游戏获胜类型
 }
 
 type GameFlowResult struct {
@@ -155,52 +173,312 @@ type GameFlowResult struct {
 	SystemStateIdOptions []int `json:"systemStateIdOptions"` // 系统状态ID选项
 }
 
-// 新增
-
-type SpecialFeatureResult struct {
-	SpecialHitPattern    string   `json:"specialHitPattern"`
-	TriggerEvent         string   `json:"triggerEvent"`
-	SpecialScreenHitData [][]bool `json:"specialScreenHitData"`
-	SpecialScreenWin     int      `json:"specialScreenWin"`
-}
-
-type WayWinData struct {
-	SymbolId      int      `json:"symbolId"`      // 命中的符号
-	HitDirection  string   `json:"hitDirection"`  // 命中描述
-	HitNumber     int      `json:"hitNumber"`     // 滚轮命中数
-	HitCount      int      `json:"hitCount"`      // 组合数
-	HitOdds       int      `json:"hitOdds"`       // 命中赔率
-	SymbolWin     int      `json:"symbolWin"`     // 赢得积分
-	ScreenHitData [][]bool `json:"screenHitData"` // 命中分布
-}
-
-type TypVal struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
-}
-
 //---------------------------------spin end-------------------------------------
 
-// ---------------------------------init-------------------------------------
-type EntitySetting struct {
-	MaxBet                  int64                  `json:"maxBet"`
-	MinBet                  int                    `json:"minBet"`
-	DefaultLineBetIdx       int                    `json:"defaultLineBetIdx"`
-	DefaultBetLineIdx       int                    `json:"defaultBetLineIdx"`
-	DefaultWaysBetIdx       int                    `json:"defaultWaysBetIdx"`
-	DefaultWaysBetColumnIdx int                    `json:"defaultWaysBetColumnIdx"`
-	DefaultConnectBetIdx    int                    `json:"defaultConnectBetIdx"`
-	DefaultQuantityBetIdx   int                    `json:"defaultQuantityBetIdx"`
-	BetCombinations         map[string]int         `json:"betCombinations"`
-	SingleBetCombinations   map[string]int         `json:"singleBetCombinations"`
-	GambleLimit             int                    `json:"gambleLimit"`
-	GambleTimes             int                    `json:"gambleTimes"`
-	GameFeatureCount        int                    `json:"gameFeatureCount"`
-	ExecuteSetting          map[string]interface{} `json:"executeSetting"`
-	Denoms                  []int                  `json:"denoms"`
-	DefaultDenomIdx         int                    `json:"defaultDenomIdx"`
-	BuyFeature              bool                   `json:"buyFeature"`
-	BuyFeatureLimit         int                    `json:"buyFeatureLimit"`
+// ---------------------------------super init-----------------------------------
+type GameSettingResponse struct {
+	MaxBet                  int64          `json:"maxBet"`
+	MinBet                  int64          `json:"minBet"`
+	DefaultLineBetIdx       int            `json:"defaultLineBetIdx"`
+	DefaultBetLineIdx       int            `json:"defaultBetLineIdx"`
+	DefaultWaysBetIdx       int            `json:"defaultWaysBetIdx"`
+	DefaultWaysBetColumnIdx int            `json:"defaultWaysBetColumnIdx"`
+	DefaultConnectBetIdx    int            `json:"defaultConnectBetIdx"`
+	DefaultQuantityBetIdx   int            `json:"defaultQuantityBetIdx"`
+	BetCombinations         map[string]int `json:"betCombinations"`
+	SingleBetCombinations   map[string]int `json:"singleBetCombinations"`
+	GambleLimit             int            `json:"gambleLimit"`
+	GambleTimes             int            `json:"gambleTimes"`
+	GameFeatureCount        int            `json:"gameFeatureCount"`
+	ExecuteSetting          ExecuteSetting `json:"executeSetting"`
+	Denoms                  []int          `json:"denoms"`
+	DefaultDenomIdx         int            `json:"defaultDenomIdx"`
+	BuyFeature              bool           `json:"buyFeature"`
+	BuyFeatureLimit         int            `json:"buyFeatureLimit"`
+}
+type ExecuteSetting struct {
+	SettingId           string              `json:"settingId"`
+	BetSpecSetting      BetSpecSetting      `json:"betSpecSetting"`
+	GameStateSetting    []GameStateSetting  `json:"gameStateSetting"`
+	DoubleGameSetting   DoubleGameSetting   `json:"doubleGameSetting"`
+	BoardDisplaySetting BoardDisplaySetting `json:"boardDisplaySetting"`
+	GameFlowSetting     GameFlowSetting     `json:"gameFlowSetting"`
+}
+type BetSpecSetting struct {
+	PaymentType      string           `json:"paymentType"`
+	ExtraBetTypeList []string         `json:"extraBetTypeList"`
+	BetSpecification BetSpecification `json:"betSpecification"`
+}
+
+type BetSpecification struct {
+	LineBetList []int  `json:"lineBetList"`
+	BetLineList []int  `json:"betLineList"`
+	BetType     string `json:"betType"`
+}
+type GameStateSetting struct {
+	GameStateType         string                `json:"gameStateType"`
+	FrameSetting          FrameSetting          `json:"frameSetting"`
+	TableSetting          TableSetting          `json:"tableSetting"`
+	SymbolSetting         SymbolSetting         `json:"symbolSetting"`
+	LineSetting           LineSetting           `json:"lineSetting"`
+	GameHitPatternSetting GameHitPatternSetting `json:"gameHitPatternSetting"`
+	SpecialFeatureSetting SpecialFeatureSetting `json:"specialFeatureSetting"`
+	ProgressSetting       ProgressSetting       `json:"progressSetting"`
+	DisplaySetting        DisplaySetting        `json:"displaySetting"`
+	ExtendSetting         ExtendSetting         `json:"extendSetting"`
+}
+type FrameSetting struct {
+	ScreenColumn    int    `json:"screenColumn"`
+	ScreenRow       int    `json:"screenRow"`
+	WheelUsePattern string `json:"wheelUsePattern"`
+}
+type TableSetting struct {
+	TableCount          int           `json:"tableCount"`
+	TableHitProbability []int         `json:"tableHitProbability"`
+	WheelData           [][]WheelSlot `json:"wheelData"` // 三维数组：[table][column][]WheelSlot
+}
+
+type WheelSlot struct {
+	WheelLength int   `json:"wheelLength"`
+	NoWinIndex  []int `json:"noWinIndex"`
+	WheelData   []int `json:"wheelData"`
+}
+type SymbolSetting struct {
+	SymbolCount     int      `json:"symbolCount"`
+	SymbolAttribute []string `json:"symbolAttribute"`
+	PayTable        [][]int  `json:"payTable"`
+	MixGroupCount   int      `json:"mixGroupCount"`
+	MixGroupSetting []any    `json:"mixGroupSetting"` // 类型未知，先设为 any
+}
+type LineSetting struct {
+	MaxBetLine int     `json:"maxBetLine"`
+	LineTable  [][]int `json:"lineTable"`
+}
+type GameHitPatternSetting struct {
+	GameHitPattern    string `json:"gameHitPattern"`
+	MaxEliminateTimes int    `json:"maxEliminateTimes"`
+}
+type SpecialFeatureSetting struct {
+	SpecialFeatureCount int              `json:"specialFeatureCount"`
+	SpecialHitInfo      []SpecialHitInfo `json:"specialHitInfo"`
+}
+
+type SpecialHitInfo struct {
+	SpecialHitPattern string `json:"specialHitPattern"`
+	TriggerEvent      string `json:"triggerEvent"`
+	BasePay           int    `json:"basePay"`
+}
+type ProgressSetting struct {
+	TriggerLimitType string       `json:"triggerLimitType"`
+	StepSetting      StepSetting  `json:"stepSetting"`
+	StageSetting     StageSetting `json:"stageSetting"`
+	RoundSetting     RoundSetting `json:"roundSetting"`
+}
+
+type StepSetting struct {
+	DefaultStep int `json:"defaultStep"`
+	AddStep     int `json:"addStep"`
+	MaxStep     int `json:"maxStep"`
+}
+
+type StageSetting struct {
+	DefaultStage int `json:"defaultStage"`
+	AddStage     int `json:"addStage"`
+	MaxStage     int `json:"maxStage"`
+}
+
+type RoundSetting struct {
+	DefaultRound int `json:"defaultRound"`
+	AddRound     int `json:"addRound"`
+	MaxRound     int `json:"maxRound"`
+}
+type DisplaySetting struct {
+	ReadyHandSetting ReadyHandSetting `json:"readyHandSetting"`
+}
+
+type ReadyHandSetting struct {
+	ReadyHandLimitType string `json:"readyHandLimitType"`
+	ReadyHandCount     int    `json:"readyHandCount"`
+}
+type ExtendSetting struct {
+	// 以下字段为可选字段，具体结构随 gameStateType 不同可能略有差异
+	InitialChooseTableIndex int     `json:"initialChooseTableIndex,omitempty"`
+	RespinProbability       float64 `json:"respinProbability,omitempty"`
+	TargetScreen            [][]int `json:"targetScreen,omitempty"`
+	RespinFlag              bool    `json:"respinFlag,omitempty"`
+	RespinTableWeight       []int   `json:"respinTableWeight,omitempty"`
+	RespinTableChoose       []int   `json:"respinTableChoose,omitempty"`
+	RespinColumnIndex       int     `json:"respinColumnIndex,omitempty"`
+
+	DampInfoRange    int   `json:"dampInfoRange"`
+	EmptySymbolID    int   `json:"emptySymbolID"`
+	C2SymbolID       int   `json:"c2SymbolID,omitempty"`
+	DampInfoSymbol   []int `json:"dampInfoSymbol,omitempty"`
+	RoundLimit       []int `json:"roundLimit,omitempty"`
+	ChooseTableIndex []int `json:"chooseTableIndex,omitempty"`
+	FowardNRound     int   `json:"fowardNRound,omitempty"`
+	AllRoundOdds     int   `json:"allRoundOdds,omitempty"`
+	FowardNRoundOdds int   `json:"fowardNRoundOdds,omitempty"`
+	OddsHitPattern   []int `json:"oddsHitPattern,omitempty"`
+}
+type DoubleGameSetting struct {
+	DoubleRoundUpperLimit int     `json:"doubleRoundUpperLimit"`
+	DoubleBetUpperLimit   int64   `json:"doubleBetUpperLimit"`
+	RTP                   float64 `json:"rtp"`
+	TieRate               float64 `json:"tieRate"`
+}
+
+type BoardDisplaySetting struct {
+	WinRankSetting WinRankSetting `json:"winRankSetting"`
+}
+
+type WinRankSetting struct {
+	BigWin   int `json:"BigWin"`
+	MegaWin  int `json:"MegaWin"`
+	UltraWin int `json:"UltraWin"`
+}
+type GameFlowSetting struct {
+	ConditionTableWithoutBoardEnd [][]string `json:"conditionTableWithoutBoardEnd"`
+}
+type LineWinResult struct {
+	LineId         int      `json:"lineId"`         // 中奖线编号
+	HitDirection   string   `json:"hitDirection"`   // 命中方向（如 "LeftToRight"）
+	IsMixGroupFlag bool     `json:"isMixGroupFlag"` // 是否为混合图标组合
+	HitMixGroup    int      `json:"hitMixGroup"`    // 混合组 ID，-1 表示无混组
+	HitSymbol      int      `json:"hitSymbol"`      // 命中符号 ID（主符号）
+	HitWay         int      `json:"hitWay"`         // 命中的连续列数
+	HitOdds        int      `json:"hitOdds"`        // 命中赔率
+	LineWin        int      `json:"lineWin"`        // 当前线获得的奖励
+	ScreenHitData  [][]bool `json:"screenHitData"`  // 每列是否命中，用于标记画面中奖位置
+}
+type RoundInfo2 struct {
+	MaxMultiplier float64 `json:"maxMultiplier"`
+	RoundId       int     `json:"roundId"`
+}
+
+type Settings struct {
+	Music     bool `json:"music"`
+	Sound     bool `json:"sound"`
+	SecondBet bool `json:"secondBet"`
+	Animation bool `json:"animation"`
+}
+
+type User struct {
+	Settings     Settings `json:"settings"`
+	Balance      float64  `json:"balance"`
+	ProfileImage string   `json:"profileImage"`
+	UserId       string   `json:"userId"`
+	Username     string   `json:"username"`
+}
+
+type Payload struct {
+	RoundsInfo         []RoundInfo2  `json:"roundsInfo"`
+	Code               int           `json:"code"`
+	ActiveBets         []interface{} `json:"activeBets"`
+	ActiveFreeBetsInfo []interface{} `json:"activeFreeBetsInfo"`
+	OnlinePlayers      int           `json:"onlinePlayers"`
+	RoundId            int           `json:"roundId"`
+	StageId            int           `json:"stageId"`
+	CurrentMultiplier  float64       `json:"currentMultiplier"`
+	User               User          `json:"user"`
+	Config             Config        `json:"config"`
+}
+
+type Response struct {
+	C string  `json:"c"`
+	P Payload `json:"p"`
+}
+type Config struct {
+	IsAutoBetFeatureEnabled          bool            `json:"isAutoBetFeatureEnabled"`
+	BetPrecision                     int             `json:"betPrecision"`
+	MaxBet                           float64         `json:"maxBet"`
+	IsAlderneyModalShownOnInit       bool            `json:"isAlderneyModalShownOnInit"`
+	IsCurrencyNameHidden             bool            `json:"isCurrencyNameHidden"`
+	IsLoginTimer                     bool            `json:"isLoginTimer"`
+	IsClockVisible                   bool            `json:"isClockVisible"`
+	IsBetsHistoryEndBalanceEnabled   bool            `json:"isBetsHistoryEndBalanceEnabled"`
+	BetInputStep                     float64         `json:"betInputStep"`
+	AutoBetOptions                   AutoBetOptions  `json:"autoBetOptions"`
+	IsGameRulesHaveMaxWin            bool            `json:"isGameRulesHaveMaxWin"`
+	IsBetsHistoryStartBalanceEnabled bool            `json:"isBetsHistoryStartBalanceEnabled"`
+	IsMaxUserMultiplierEnabled       bool            `json:"isMaxUserMultiplierEnabled"`
+	IsShowActivePlayersWidget        bool            `json:"isShowActivePlayersWidget"`
+	BackToHomeActionType             string          `json:"backToHomeActionType"`
+	InactivityTimeForDisconnect      int             `json:"inactivityTimeForDisconnect"`
+	IsActiveGameFocused              bool            `json:"isActiveGameFocused"`
+	IsNetSessionEnabled              bool            `json:"isNetSessionEnabled"`
+	FullBetTime                      int             `json:"fullBetTime"`
+	MinBet                           float64         `json:"minBet"`
+	IsGameRulesHaveMinimumBankValue  bool            `json:"isGameRulesHaveMinimumBankValue"`
+	IsShowTotalWinWidget             bool            `json:"isShowTotalWinWidget"`
+	IsShowBetControlNumber           bool            `json:"isShowBetControlNumber"`
+	BetOptions                       []float64       `json:"betOptions"`
+	ModalShownOnInit                 string          `json:"modalShownOnInit"`
+	IsLiveBetsAndStatisticsHidden    bool            `json:"isLiveBetsAndStatisticsHidden"`
+	OnLockUIActions                  string          `json:"onLockUIActions"`
+	IsEmbeddedVideoHidden            bool            `json:"isEmbeddedVideoHidden"`
+	IsBetTimerBranded                bool            `json:"isBetTimerBranded"`
+	DefaultBetValue                  float64         `json:"defaultBetValue"`
+	MaxUserWin                       float64         `json:"maxUserWin"`
+	IsUseMaskedUsername              bool            `json:"isUseMaskedUsername"`
+	IsShowWinAmountUntilNextRound    bool            `json:"isShowWinAmountUntilNextRound"`
+	MultiplierPrecision              int             `json:"multiplierPrecision"`
+	AutoCashOut                      AutoCashOut     `json:"autoCashOut"`
+	IsMultipleBetsEnabled            bool            `json:"isMultipleBetsEnabled"`
+	EngagementTools                  EngagementTools `json:"engagementTools"`
+	IsFreeBetsEnabled                bool            `json:"isFreeBetsEnabled"`
+	PingIntervalMs                   int             `json:"pingIntervalMs"`
+	IsLogoUrlHidden                  bool            `json:"isLogoUrlHidden"`
+	ChatApiVersion                   int             `json:"chatApiVersion"`
+	Currency                         string          `json:"currency"`
+	ShowCrashExampleInRules          bool            `json:"showCrashExampleInRules"`
+	IsPodSelectAvailable             bool            `json:"isPodSelectAvailable"`
+	ReturnToPlayer                   int             `json:"returnToPlayer"`
+	IsBalanceValidationEnabled       bool            `json:"isBalanceValidationEnabled"`
+	IsHolidayTheme                   bool            `json:"isHolidayTheme"`
+	IsGameRulesHaveMultiplierFormula bool            `json:"isGameRulesHaveMultiplierFormula"`
+	AccountHistoryActionType         string          `json:"accountHistoryActionType"`
+	Chat                             Chat            `json:"chat"`
+	IrcDisplayType                   string          `json:"ircDisplayType"`
+	GameRulesAutoCashOutType         string          `json:"gameRulesAutoCashOutType"`
+}
+
+type AutoBetOptions struct {
+	DecreaseOrExceedStopPointReq bool  `json:"decreaseOrExceedStopPointReq"`
+	NumberOfRounds               []int `json:"numberOfRounds"`
+}
+
+type AutoCashOut struct {
+	MinValue     float64 `json:"minValue"`
+	DefaultValue float64 `json:"defaultValue"`
+	MaxValue     float64 `json:"maxValue"`
+}
+
+type EngagementTools struct {
+	IsExternalChatEnabled bool `json:"isExternalChatEnabled"`
+}
+
+type Chat struct {
+	Promo            Promo   `json:"promo"`
+	Rain             Rain    `json:"rain"`
+	IsGifsEnabled    bool    `json:"isGifsEnabled"`
+	SendMessageDelay float64 `json:"sendMessageDelay"`
+	IsEnabled        bool    `json:"isEnabled"`
+	MaxMessages      int     `json:"maxMessages"`
+	MaxMessageLength int     `json:"maxMessageLength"`
+}
+
+type Promo struct {
+	IsEnabled bool `json:"isEnabled"`
+}
+
+type Rain struct {
+	IsEnabled         bool    `json:"isEnabled"`
+	RainMinBet        float64 `json:"rainMinBet"`
+	DefaultNumOfUsers int     `json:"defaultNumOfUsers"`
+	MinNumOfUsers     int     `json:"minNumOfUsers"`
+	MaxNumOfUsers     int     `json:"maxNumOfUsers"`
+	RainMaxBet        float64 `json:"rainMaxBet"`
 }
 
 //---------------------------------init end-------------------------------------
@@ -231,12 +509,14 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	importFromExcel("gameRecord.xlsx")
-
 	r.GET("/websocket", wsHandler)
 	r.POST("/frontendAPI.do", reportConfigHandler)
 	r.POST("/rum", reportRumHandler)
 	r.POST("/batchLog", reportLogHandler)
+	r.POST("/cache/GetGameResultSetting", GetGameResultSetting)
+	// r.POST('https://spf-api.pgh-nmgat.com/mascot/get/notify',
+	// r.POST('https://spf-api.pgh-nmgat.com/whitelabel',
+	// r.POST('https://spf-api.pgh-nmgat.com/settinggetSetting',
 
 	fmt.Println("🚀 服务启动：")
 	fmt.Println("- WebSocket 地址：ws://localhost:3333/websocket")
@@ -254,6 +534,9 @@ type LogEntry struct {
 	// 你可以根据实际内容扩展其他字段
 }
 
+func GetGameResultSetting(c *gin.Context) {
+
+}
 func reportLogHandler(c *gin.Context) {
 	var logs []LogEntry
 
@@ -302,10 +585,10 @@ func reportConfigHandler(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status": "0000",
 			"data": gin.H{
+				"url": "http://aviator.local.com/aviator/?currency=MAD&operator=demo&jurisdiction=CW&lang=pt&return_url&user=53302&token=OTf6G17K3bzYNpWc1uRqTduR2qovP1BR",
 				//"url": "http://abcd.jbp.com/?tpg2tl=1&d=1&isApp=true&gName=TreasureBowl_d65c592&lang=cn&homeUrl=&mute=0&gameType=14&mType=14042&x=e9tkQRED2CBLfk0amYQ8IuupMN-wAZcoIKYGa2P4tE2QLQjl6Qg_MmX6PUb8jPYvi0mYBom7O5nmo0unuC3eivfqG3Y3BIDC",
-				// "url": "http://abcd.abcd.com/?tpg2tl=1&d=1&isApp=true&gName=PopPopCandy_096d45b&lang=cn&homeUrl=&mute=0&gameType=14&mType=14087&x=e9tkQRED2CClQmf9gCvFzgwjLyNIEyHpYaWaJUcxXZAYv4XExx8PPCqeD9kNReoH1u1relEAkvZBJu0EJcsF5wKTlotEyTq7",
+				//	"url": "http://abcd.abcd.com/?tpg2tl=1&d=1&isApp=true&gName=PopPopCandy_096d45b&lang=cn&homeUrl=&mute=0&gameType=14&mType=14087&x=e9tkQRED2CClQmf9gCvFzgwjLyNIEyHpYaWaJUcxXZAYv4XExx8PPCqeD9kNReoH1u1relEAkvZBJu0EJcsF5wKTlotEyTq7",
 				//"url": "http://abcd.super.com/?tpg2tl=1&d=1&isApp=true&gName=LuckyDiamond_8dca129&lang=cn&homeUrl=&mute=0&gameType=14&mType=14054&x=e9tkQRED2CBWLS-LUoWn_VDFlws8ozYiyKUUY8aNoIitinh1Hku72QhwxKxXm9gHzAVLCNkc6pWdBRwpN3fwGN1M1OTa9tGh",
-				"url": "http://richer.local.com/?tpg2tl=1&d=1&isApp=true&gName=MoneybagsMan_77bfbeb&lang=cn&homeUrl=&mute=0&gameType=14&mType=14047&x=e9tkQRED2CDzvXCEmELwok7aC0pft80PCPH4pX0ueZcp-O6091x8jjqrIY33XP8Yi8f_UJMK5xENkkJT37okjdxreL3Xfxwq",
 			},
 		})
 	case "19":
@@ -322,10 +605,8 @@ func reportConfigHandler(c *gin.Context) {
 					"isShowCurrency":   true,
 					"isShowDollarSign": false,
 					"decimalPoint":     2,
-					"gameGroup": []int{
-						130, 131, 7, 0, 9, 140, 12, 141, 142, 0, 0, 18, 22, 30, 31,
-						160, 32, 161, 162, 50, 55, 56, 57, 58, 59, 60, 66, 67, 75,
-						80, 81, 90, 92, 93, 120,
+					"gameGroup": []int{ //14054
+						131, 7, 0, 9, 140, 12, 141, 142, 0, 0, 18, 150, 22, 30, 31, 160, 32, 161, 162, 18, 50, 55, 56, 57, 58, 59, 60, 190, 66, 67, 70, 75, 80, 81, 90, 92, 93, 120,
 					},
 					"functionList": []string{},
 				},
@@ -338,23 +619,21 @@ func reportConfigHandler(c *gin.Context) {
 				},
 				"result10": gin.H{
 					"status":    "0000",
-					"sessionID": []string{"", "", "", "CD4414C0DB1C78180A701358764DC2753E49C01C5456222A8E4D82530BDAFE4B138D3425C162A2368E5B8E31354B29EC9E51756D2A887EDCDF7BCD82D67FA924877174E55B96280065DFD9F850681C0F70E9E79272A0BC2C455B29E2CE458E2F17A6212C0BD3EC11359573D7B5DC8B84082A3B720E2A821E7FA682E64FC4165BE31D5635679CFD8DECEBFBA665E6DF331878625875AFC8B82342E1068E535C25AF1285F0223E487D34E3873B77607F8FDEA3D1340533A6CB6DD17306B58262BFF15CCBB45CBA640B560B6BF472F0E370EEBC6A14612EDF669C10C84E40236744BC901F0B0E2AA906FB444CF6736D873C88BF6CBDAC6E8C0F29AC7924551BEFD6ACEB645832E623C488455466AE8C2203B476C9331522D85482386EDE3BD45DEB215D83E10E139114CBC4E57A57E6197788A99209EE217131A9C0E9CC41B14244505D6E90CF218329B78AFEED6EE7F8DCB79733E160923EFFC919143A5F26F1DA6F5322C99FB59B39C35F262BDC016F3410E05889F33EE1603B1E3EDC0A88BC09A3B2680270F17A7B98F201C741E6499F7ECE7FBDF1F36EF4F241BE34F6FDAD879EB51496B791603FAC538268EA71E73E00E056684E9BC07A25A1251C8EF556968E0C012E395CFDF395CA6AA045C777A36E963E636BD998409CB0328ECEB740F31905B2DA5F63B51EA8AAAE6FEF0A4CE5AAE59984E5248ED2", ""},
+					"sessionID": []string{"", "", "", "A", ""},
 
-					//"sessionID":   []string{"", "", "", "CD4414C0DB1C7818C6847120848D9E6C20E23EFADFC2C5898E4D82530BDAFE4B2B93DE64ACFE2C4D8E0E5BA7F133CF34F79004B011968D674EDAF5945E9FCDC3CE997A5FAFD16DD2DBD60BA559C97A5E70E9E79272A0BC2C455B29E2CE458E2F17A6212C0BD3EC1138D876E96D26C4AA082A3B720E2A821E389A4FFFA66847E23C877471C2342E9D35D8D1634CFF3595024A411F92BAE456F72C425B183F3D0EB487274164CB29A3AF24C913805B63E3FE86171D722E5D2A31D99815BA487A39215D83E10E139114CBC4E57A57E61977C68B65CD11882AAFDEE14AEE61B82AFDAB0C59EDE90950F3EE618A9EF0F05F24737CB437DCE314DBC919143A5F26F1DA6F5322C99FB59B39C35F262BDC016F3410E05889F33EE1603B1E3EDC0A88BC09A3B2680270F17A7B98F201C741E6499F7ECE7FBDF1F36EF4F241BE34F6FDAD879EB51496B791603F171284C23C767A5C5FCEC67FD57E47C725A1251C8EF55696656A7F8515FF80F6384E3B355747D2C85010EC2C6765AB07F34C85DC54D10E60494FBB363CE4A51BA1547BD53BE1B61AD0FC0F1EEE7DD1F0727DD567F4DF2E13", ""},
 					"zone":     "JDB_ZONE_GAME",
-					"gsInfo":   "jdb1688.net_443_0",
+					"gsInfo":   "jdb247.net_443_0",
 					"gameType": 14,
 
-					// "machineType": 14042,//聚宝盆
-					// "machineType": 14087,//宝宝甜心
-					//"machineType": 14054,
-					"machineType": 14047, // 富豪哥
+					//  "machineType": 14042,//聚宝盆
+					//"machineType": 14087, //宝宝甜心
+					"machineType": 14054,
 					"isRecovery":  false,
 					"s0":          "",
 					"s1":          "",
 					"s2":          "",
-					//"s3":          "CD4414C0DB1C78189CC2637019E4862285246E049B693B188E4D82530BDAFE4BBCD64B3F3B290B050DBFDD229E56A5B9B0890C2E7209895748F9A9FB97F406617146A4234BC0F8BD1C0B4CA0D07638E870E9E79272A0BC2C455B29E2CE458E2F17A6212C0BD3EC1138D876E96D26C4AA082A3B720E2A821E7FA682E64FC4165B5605E4BAB81C9BAE3F817B45359E709B024A411F92BAE456D6BEE57909110F951CB02116DBA632719778FCEE2F44CE9ED841AA906A5AF7D51FBFB15D068F7C2BA73D0A351243C59208960186D5F5A711560B6BF472F0E370EEBC6A14612EDF669C10C84E40236744BC901F0B0E2AA906FB444CF6736D873C88BF6CBDAC6E8C0F2DFB42464D959A614FBD3ADB264BFB78BA2D090E951B845E1B7E00FAC008A2642A35E720F44EC6435B338D33B125804DE9CF33A7B42EC506DFD3E7EF27BC1C9903DF678C070092DDBC25C1F5DC0F4D74BCCA48493D656543B27B4BBB4BF5F244E3EBD0515D79CD4223BE42575D8E326D65716B1DD24F07457D20232CF89447A70082593D869179A2FB0C4C9645A3217B3A27BCAD0766F4D588800E5E0B2F695C5A6E0E0B0E5398C25CF054B9D5E0B7F9417BDD97001E8DDE76FE9B7C0098E1192E4121E469AB51135788CE2461CC374C092BD5409AF59386C8AA1562D84244FE2204B067F6EDC535E06480915887C28CED3CA01A2BF058D895DC900678AF487E28D9DE2EEFF07E85F70476E3FD9671FC",
-					"s3":       "CD4414C0DB1C78180A701358764DC2753E49C01C5456222A8E4D82530BDAFE4B138D3425C162A2368E5B8E31354B29EC9E51756D2A887EDCDF7BCD82D67FA924877174E55B96280065DFD9F850681C0F70E9E79272A0BC2C455B29E2CE458E2F17A6212C0BD3EC11359573D7B5DC8B84082A3B720E2A821E7FA682E64FC4165BE31D5635679CFD8DECEBFBA665E6DF331878625875AFC8B82342E1068E535C25AF1285F0223E487D34E3873B77607F8FDEA3D1340533A6CB6DD17306B58262BFF15CCBB45CBA640B560B6BF472F0E370EEBC6A14612EDF669C10C84E40236744BC901F0B0E2AA906FB444CF6736D873C88BF6CBDAC6E8C0F29AC7924551BEFD6ACEB645832E623C488455466AE8C2203B476C9331522D85482386EDE3BD45DEB215D83E10E139114CBC4E57A57E6197788A99209EE217131A9C0E9CC41B14244505D6E90CF218329B78AFEED6EE7F8DCB79733E160923EFFC919143A5F26F1DA6F5322C99FB59B39C35F262BDC016F3410E05889F33EE1603B1E3EDC0A88BC09A3B2680270F17A7B98F201C741E6499F7ECE7FBDF1F36EF4F241BE34F6FDAD879EB51496B791603FAC538268EA71E73E00E056684E9BC07A25A1251C8EF556968E0C012E395CFDF395CA6AA045C777A36E963E636BD998409CB0328ECEB740F31905B2DA5F63B51EA8AAAE6FEF0A4CE5AAE59984E5248ED2",
+					"s3":          "CD4414C0DB1C7818B1B9E175ADFFBC9FA5CDA709FC7815878E4D82530BDAFE4BC6A3CBE41610DDA4082A5F572CCBDF83DDD2527BB4B77464B2E147F01304A7F75E520E6EA4E55D2BB00597F9ABCF27B670E9E79272A0BC2C455B29E2CE458E2F17A6212C0BD3EC11E9867F8D66E378D6082A3B720E2A821E8C142CE6F1B1DC1C8E2E2074D9169F29CF95201512B4E266024A411F92BAE456D6BEE57909110F951CB02116DBA632719778FCEE2F44CE9ED841AA906A5AF7D51FBFB15D068F7C2BA73D0A351243C59208960186D5F5A711560B6BF472F0E370EEBC6A14612EDF669C10C84E40236744BC901F0B0E2AA906FB444CF6736D873C88BF6CBDAC6E8C0F2DFB42464D959A614FBD3ADB264BFB78BA2D090E951B845E1B7E00FAC008A2642A35E720F44EC6435B338D33B125804DE9CF33A7B42EC506DFD3E7EF27BC1C9917FADC3904014E8B3140074492E64187172A04D0A06CEBBF57EA3B0852DFB7FB2D09C1A97385601E23BE42575D8E326D65716B1DD24F07457D20232CF89447A70082593D869179A2FB0C4C9645A3217B3A27BCAD0766F4D588800E5E0B2F695C5A6E0E0B0E5398C25CF054B9D5E0B7F9417BDD97001E8DDE3777DA24F23C00CFDAB548B3E91E27A85788CE2461CC374C8F35202A6C9A1370384E3B355747D2C85010EC2C6765AB07E571320D9A40FE3172FB539D9D5A309CA1547BD53BE1B61AD0FC0F1EEE7DD1F0727DD567F4DF2E13",
+					// "s3":       "CD4414C0DB1C78180A701358764DC2753E49C01C5456222A8E4D82530BDAFE4B138D3425C162A2368E5B8E31354B29EC9E51756D2A887EDCDF7BCD82D67FA924877174E55B96280065DFD9F850681C0F70E9E79272A0BC2C455B29E2CE458E2F17A6212C0BD3EC11359573D7B5DC8B84082A3B720E2A821E7FA682E64FC4165BE31D5635679CFD8DECEBFBA665E6DF331878625875AFC8B82342E1068E535C25AF1285F0223E487D34E3873B77607F8FDEA3D1340533A6CB6DD17306B58262BFF15CCBB45CBA640B560B6BF472F0E370EEBC6A14612EDF669C10C84E40236744BC901F0B0E2AA906FB444CF6736D873C88BF6CBDAC6E8C0F29AC7924551BEFD6ACEB645832E623C488455466AE8C2203B476C9331522D85482386EDE3BD45DEB215D83E10E139114CBC4E57A57E6197788A99209EE217131A9C0E9CC41B14244505D6E90CF218329B78AFEED6EE7F8DCB79733E160923EFFC919143A5F26F1DA6F5322C99FB59B39C35F262BDC016F3410E05889F33EE1603B1E3EDC0A88BC09A3B2680270F17A7B98F201C741E6499F7ECE7FBDF1F36EF4F241BE34F6FDAD879EB51496B791603FAC538268EA71E73E00E056684E9BC07A25A1251C8EF556968E0C012E395CFDF395CA6AA045C777A36E963E636BD998409CB0328ECEB740F31905B2DA5F63B51EA8AAAE6FEF0A4CE5AAE59984E5248ED2",
 					"s4":       "",
 					"gameUid":  "demo000428@XX",
 					"gamePass": "2313ee4", //宝宝甜心
@@ -386,7 +665,7 @@ func reportConfigHandler(c *gin.Context) {
 				},
 			},
 		})
-	case "13":
+	case "21":
 		c.JSON(200, gin.H{
 			"status": "0000",
 		})
@@ -426,7 +705,7 @@ func wsHandler(c *gin.Context) {
 		}
 
 		if messageType == websocket.BinaryMessage {
-			// fmt.Println("📥 收到二进制消息:", len(data))
+			fmt.Println("📥 收到二进制消息:", len(data))
 			// // //打印收到的数据
 			// fmt.Printf("字节: % x\n", data)
 			// 传入 bytes.Reader，跳过前4字节
@@ -435,7 +714,7 @@ func wsHandler(c *gin.Context) {
 
 			// decoded, consumed := DecodeSFSObject(data2[3:])
 			// fmt.Println("📥 consumed:", consumed)
-			fmt.Printf("🧩 解码结果: %+v\n", decoded)
+			//fmt.Printf("🧩 解码结果: %+v\n", decoded)
 			HandleSFSMessage(conn, decoded)
 
 		}
@@ -612,7 +891,7 @@ func DecodeSFSObject(reader *bytes.Reader, fullData []byte) (map[string]interfac
 				break
 			}
 			result[fieldName] = string(str)
-			fmt.Printf("✅ string: %s\n", string(str))
+			//fmt.Printf("✅ string: %s\n", string(str))
 		case TypeUtfStringArray:
 			var count int16
 			if err := binary.Read(reader, binary.BigEndian, &count); err != nil {
@@ -1031,6 +1310,8 @@ func BuildSFSMessage(a int16, c interface{}, p map[string]interface{}) []byte {
 	// 	fmt.Println("📤 SFSMessage (a == 13):")
 	// 	fmt.Println(final.Bytes())
 	// }
+	fmt.Println("发送消息", final.Len())
+
 	return final.Bytes()
 }
 
@@ -1082,6 +1363,7 @@ func BuildSFSObject(obj map[string]interface{}) []byte {
 			buf.WriteByte(TypeSFSObject)
 			inner := BuildSFSObject(v)
 			buf.Write(inner)
+
 		case []float64:
 			buf.WriteByte(TypeDoubleArray)
 			binary.Write(buf, binary.BigEndian, int16(len(v))) // 写入元素数量
@@ -1119,6 +1401,16 @@ func BuildSFSObject(obj map[string]interface{}) []byte {
 				binary.Write(buf, binary.BigEndian, uint16(len(s)))
 				buf.Write([]byte(s))
 			}
+		case []map[string]interface{}:
+			buf.WriteByte(TypeSFSArray)
+			binary.Write(buf, binary.BigEndian, int16(len(v))) // 数组长度
+
+			for _, item := range v {
+				buf.WriteByte(TypeSFSObject)  // 每个元素类型
+				inner := BuildSFSObject(item) // 递归构造
+				buf.Write(inner)
+			}
+
 		default:
 			fmt.Printf("⚠️ 暂不支持类型: %T (%v)\n", v, v)
 		}
@@ -1215,36 +1507,48 @@ func handleHandshake(conn *websocket.Conn, obj map[string]interface{}) {
 }
 func handleLogin(conn *websocket.Conn, obj map[string]interface{}) {
 
-	roomList := []interface{}{
-		[]interface{}{2, "SLOT_ROOM", "default", true, false, false, int16(1839), int16(5000), []interface{}{}, int16(0), int16(0)},
-		[]interface{}{3, "PUSOYS_LOBBY", "default", false, false, false, int16(21), int16(5000), []interface{}{}},
-		[]interface{}{4, "TONGITS_LOBBY", "default", false, false, false, int16(29), int16(5000), []interface{}{}},
-		[]interface{}{5, "RUMMY_LOBBY", "default", false, false, false, int16(0), int16(5000), []interface{}{}},
-		[]interface{}{6, "RUNNING_GAME", "default", false, false, false, int16(16), int16(5000), []interface{}{}},
-		[]interface{}{236, "18020", "default", false, false, false, int16(1), int16(5000), []interface{}{}},
-		[]interface{}{237, "18021", "default", false, false, false, int16(0), int16(5000), []interface{}{}},
-		[]interface{}{238, "SINGLE_SPIN", "default", false, false, false, int16(8), int16(5000), []interface{}{}},
-		[]interface{}{239, "18026", "default", false, false, false, int16(6), int16(5000), []interface{}{}},
-		[]interface{}{240, "MINES", "default", false, false, false, int16(91), int16(5000), []interface{}{}},
-		[]interface{}{241, "CASINO_ROOM", "default", false, false, false, int16(0), int16(5000), []interface{}{}},
-		[]interface{}{242, "18022", "default", false, false, false, int16(0), int16(5000), []interface{}{}},
-	}
+	// roomList := []interface{}{
+	// 	[]interface{}{2, "SLOT_ROOM", "default", true, false, false, int16(1839), int16(5000), []interface{}{}, int16(0), int16(0)},
+	// 	[]interface{}{3, "PUSOYS_LOBBY", "default", false, false, false, int16(21), int16(5000), []interface{}{}},
+	// 	[]interface{}{4, "TONGITS_LOBBY", "default", false, false, false, int16(29), int16(5000), []interface{}{}},
+	// 	[]interface{}{5, "RUMMY_LOBBY", "default", false, false, false, int16(0), int16(5000), []interface{}{}},
+	// 	[]interface{}{6, "RUNNING_GAME", "default", false, false, false, int16(16), int16(5000), []interface{}{}},
+	// 	[]interface{}{236, "18020", "default", false, false, false, int16(1), int16(5000), []interface{}{}},
+	// 	[]interface{}{237, "18021", "default", false, false, false, int16(0), int16(5000), []interface{}{}},
+	// 	[]interface{}{238, "SINGLE_SPIN", "default", false, false, false, int16(8), int16(5000), []interface{}{}},
+	// 	[]interface{}{239, "18026", "default", false, false, false, int16(6), int16(5000), []interface{}{}},
+	// 	[]interface{}{240, "MINES", "default", false, false, false, int16(91), int16(5000), []interface{}{}},
+	// 	[]interface{}{241, "CASINO_ROOM", "default", false, false, false, int16(0), int16(5000), []interface{}{}},
+	// 	[]interface{}{242, "18022", "default", false, false, false, int16(0), int16(5000), []interface{}{}},
+	// }
 
+	// // 构造返回数据 map[payload]
+	// p := map[string]interface{}{
+	// 	"rs": int16(0),        // 登录成功
+	// 	"zn": "JDB_ZONE_GAME", // 区域名
+	// 	"un": obj["un"],       // 用户名
+	// 	"pi": int16(0),        // playerId
+	// 	"rl": roomList,        // 房间列表
+	// 	"id": int32(1928827),  // 用户 ID
+	// }
+	roomList := []interface{}{
+		[]interface{}{0, "game_state", "default", false, false, false, 0, 20, []interface{}{}},
+	}
 	// 构造返回数据 map[payload]
 	p := map[string]interface{}{
-		"rs": int16(0),        // 登录成功
-		"zn": "JDB_ZONE_GAME", // 区域名
-		"un": obj["un"],       // 用户名
-		"pi": int16(0),        // playerId
-		"rl": roomList,        // 房间列表
-		"id": int32(1928827),  // 用户 ID
+		"rs": int16(0),                   // 登录成功
+		"zn": "aviator_core_inst2_demo1", // 区域名
+		"un": obj["un"],                  // 用户名
+		"pi": int16(0),                   // playerId
+		"rl": roomList,                   // 房间列表
+		"id": int32(1928827),             // 用户 ID
 	}
-
 	// 构造封包并发送
 	packet := BuildSFSMessage(1, 0, p)
 	conn.WriteMessage(websocket.BinaryMessage, packet)
 
 	fmt.Println("✅ 已发送 Login 响应")
+	AfterLogin(conn, obj)
 }
 func handleUserCountChange(conn *websocket.Conn, obj map[string]interface{}) {
 
@@ -1258,94 +1562,138 @@ func handleUserCountChange(conn *websocket.Conn, obj map[string]interface{}) {
 
 	fmt.Println("✅ 已发送 Login 响应")
 }
-func CallExtensionResponse(conn *websocket.Conn, obj map[string]interface{}) {
-	fullGameConfig := map[string]interface{}{
-		"displayedAutoCashOutTimer":      int64(10),
-		"isActiveGameFocused":            false,
-		"isRuleUnfinishedGame":           false,
-		"minRoundDurationInMillis":       int64(0),
-		"isLoginTimer":                   false,
-		"isGameNavigationEnabled":        true,
-		"isBetsHistoryEndBalanceEnabled": false,
-		"activeGame":                     "mines",
-		"minBet":                         0.1,
-		"houseEdge":                      3.0,
-		"accountHistoryActionType":       "navigate",
-		"defaultBetValue":                0.3,
-		"isNeedToShowOnLoginModalNotRegulatedByAlderney": false,
-		"showPaytableOnStart":                            false,
-		"currency":                                       "USD",
-		"isBalanceValidationEnabled":                     true,
-		"overallAutoCashOutTimer":                        int64(30),
-		"gameList": []interface{}{
-			"dice", "plinko", "goal", "hi-lo", "mines", "keno",
-			"mini-roulette", "hotline", "balloon",
-		},
-		"maxUserWin":                           10000.0,
-		"isCurrencyNameHidden":                 false,
-		"fastBets":                             []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.2, 2, 4, 10, 20, 50, 100},
-		"pingIntervalMs":                       int64(15000),
-		"isShowWinAmountUntilNextRound":        false,
-		"isShowMultiplierExplanation":          false,
-		"isHideFreeBetsInUserMenu":             false,
-		"isAutoBetFeatureEnabled":              true,
-		"isShowRtp":                            false,
-		"operatorHomeButtonFrontEndActionType": "navigate",
-		"backToHomeActionType":                 "navigate",
-		"isShowLastRoundStateUntilNextRound":   false,
-		"betPrecision":                         int32(2),
-		"isClockVisible":                       false,
-		"isBetsHistoryStartBalanceEnabled":     false,
-		"inactivityTimeForDisconnect":          int64(0),
-		"isFreeBetDepositEnabled":              false,
-		"isMaxWinAm":                           false,
-		"maxBet":                               100.0,
-		"smallScreenWarning":                   false,
-		"autoBetNumberOfRoundsList":            []int32{3, 10, 25, 100, 200, 500},
-	}
+
+func AfterLogin(conn *websocket.Conn, obj map[string]interface{}) {
 	p := map[string]interface{}{
+		"c": "init",
 		"p": map[string]interface{}{
-			"gameConfig": map[string]interface{}{
-				"coefficients": map[string]interface{}{
-					"1":  []float64{1.01, 1.05, 1.1, 1.15, 1.21, 1.27, 1.34, 1.42, 1.51, 1.61, 1.73, 1.86, 2.02, 2.2, 2.42, 2.69, 3.03, 3.46, 4.04, 4.84, 6.06, 8.08, 12.12, 24.24},
-					"2":  []float64{1.05, 1.15, 1.25, 1.38, 1.53, 1.7, 1.9, 2.13, 2.42, 2.77, 3.19, 3.73, 4.4, 5.29, 6.46, 8.08, 10.39, 13.85, 19.4, 29.1, 48.5, 97, 291},
-					"3":  []float64{1.1, 1.25, 1.44, 1.67, 1.95, 2.3, 2.73, 3.28, 3.98, 4.9, 6.12, 7.8, 10.14, 13.52, 18.59, 26.55, 39.83, 63.74, 111.55, 223.1, 557.75, 2231},
-					"4":  []float64{1.15, 1.38, 1.67, 2.05, 2.53, 3.16, 4, 5.15, 6.74, 8.98, 12.25, 17.16, 24.78, 37.18, 58.43, 97.38, 175.29, 350.58, 818.03, 2454.1, 12270.5},
-					"5":  []float64{1.21, 1.53, 1.95, 2.53, 3.32, 4.43, 6.01, 8.32, 11.79, 17.16, 25.74, 40.04, 65.07, 111.54, 204.5, 409.01, 920.28, 2454.09, 8589.34, 51536.09},
-					"6":  []float64{1.27, 1.7, 2.3, 3.16, 4.43, 6.33, 9.25, 13.88, 21.45, 34.32, 57.2, 100.1, 185.91, 371.83, 818.03, 2045.08, 6135.25, 24541, 171787},
-					"7":  []float64{1.34, 1.9, 2.73, 4, 6.01, 9.25, 14.65, 23.97, 40.75, 72.45, 135.86, 271.72, 588.73, 1412.96, 3885.65, 12952.19, 58284.87, 466278.99},
-					"8":  []float64{1.42, 2.13, 3.28, 5.15, 8.32, 13.88, 23.97, 43.15, 81.51, 163.03, 349.35, 815.17, 2119.45, 6358.35, 23313.95, 116569.75, 1049127.75},
-					"9":  []float64{1.51, 2.42, 3.98, 6.74, 11.79, 21.45, 40.75, 81.51, 173.22, 395.94, 989.85, 2771.58, 9007.66, 36030.64, 198168.57, 1981685.74},
-					"10": []float64{1.61, 2.77, 4.9, 8.98, 17.16, 34.32, 72.45, 163.03, 395.94, 1055.84, 3167.52, 11086.35, 48040.86, 288245.19, 3170697.19},
-					"11": []float64{1.73, 3.19, 6.12, 12.25, 25.74, 57.2, 135.86, 349.35, 989.85, 3167.52, 11878.23, 55431.76, 360306.5, 4323678},
-					"12": []float64{1.86, 3.73, 7.8, 17.16, 40.04, 100.1, 271.72, 815.17, 2771.58, 11086.35, 55431.76, 388022.38, 5044291},
-					"13": []float64{2.02, 4.4, 10.14, 24.78, 65.07, 185.91, 588.73, 2119.44, 9007.66, 48040.86, 360306.49, 5044290.99},
-					"14": []float64{2.2, 5.29, 13.52, 37.18, 111.55, 371.83, 1412.96, 6358.35, 36030.65, 288245.2, 4323678},
-					"15": []float64{2.42, 6.46, 18.59, 58.43, 204.5, 818.03, 3885.65, 23313.94, 198168.57, 3170697.19},
-					"16": []float64{2.69, 8.08, 26.55, 97.38, 409.01, 2045.08, 12952.19, 116569.74, 1981685.74},
-					"17": []float64{3.03, 10.39, 39.83, 175.29, 920.28, 6135.25, 58284.87, 1049127.75},
-					"18": []float64{3.46, 13.85, 63.74, 350.58, 2454.1, 24541, 466279},
-					"19": []float64{4.04, 19.4, 111.55, 818.03, 8589.35, 171787},
-					"20": []float64{4.85, 29.1, 223.1, 2454.1, 51536.1},
-				},
-				"defaultMinesAmount": 3,
+			"roundsInfo": []map[string]interface{}{
+				{"maxMultiplier": 2.25, "roundId": 8241979},
+				{"maxMultiplier": 1.35, "roundId": 8241977},
+				{"maxMultiplier": 1.37, "roundId": 8241974},
+				{"maxMultiplier": 1.0, "roundId": 8241972},
+				{"maxMultiplier": 2.83, "roundId": 8241969},
+				{"maxMultiplier": 2.37, "roundId": 8241965},
+				{"maxMultiplier": 2.52, "roundId": 8241964},
+				{"maxMultiplier": 1.0, "roundId": 8241963},
+				{"maxMultiplier": 4.41, "roundId": 8241960},
+				{"maxMultiplier": 1.74, "roundId": 8241958},
+				{"maxMultiplier": 1.98, "roundId": 8241955},
+				{"maxMultiplier": 1.03, "roundId": 8241954},
+				{"maxMultiplier": 2.41, "roundId": 8241952},
+				{"maxMultiplier": 1.52, "roundId": 8241951},
+				{"maxMultiplier": 1.45, "roundId": 8241949},
+				{"maxMultiplier": 2.37, "roundId": 8241946},
+				{"maxMultiplier": 1.29, "roundId": 8241944},
+				{"maxMultiplier": 1.12, "roundId": 8241943},
+				{"maxMultiplier": 18.16, "roundId": 8241939},
+				{"maxMultiplier": 1.0, "roundId": 8241938},
+				{"maxMultiplier": 1.8, "roundId": 8241937},
+				{"maxMultiplier": 4.05, "roundId": 8241935},
+				{"maxMultiplier": 178.86, "roundId": 8241931},
+				{"maxMultiplier": 1.73, "roundId": 8241928},
+				{"maxMultiplier": 1.77, "roundId": 8241926},
 			},
-			"code":     200,
-			"freeBets": []interface{}{},
+			"code":               200,
+			"activeBets":         []interface{}{}, // 空 SFSArray
+			"activeFreeBetsInfo": []interface{}{}, // 空 SFSArray
+			"onlinePlayers":      1329,
 			"user": map[string]interface{}{
 				"settings": map[string]interface{}{
-					"music": false,
-					"sound": true,
+					"music":     false,
+					"sound":     false,
+					"secondBet": true,
+					"animation": true,
 				},
-				"balance":  3000.0,
-				"avatar":   "av-11.png",
-				"userId":   "2008320",
-				"username": "demo_75809",
+				"balance":      5000.0,
+				"profileImage": "av-21.png",
+				"userId":       "33687&&demo",
+				"username":     "demo_71815",
 			},
-			"config": fullGameConfig, // 需你在代码中另行定义 fullGameConfig 内容
-
+			"config": map[string]interface{}{
+				"isAutoBetFeatureEnabled":        true,
+				"betPrecision":                   2,
+				"maxBet":                         1000.0,
+				"isAlderneyModalShownOnInit":     false,
+				"isCurrencyNameHidden":           false,
+				"isLoginTimer":                   false,
+				"isClockVisible":                 false,
+				"isBetsHistoryEndBalanceEnabled": false,
+				"betInputStep":                   1.0,
+				"autoBetOptions": map[string]interface{}{
+					"decreaseOrExceedStopPointReq": true,
+					"numberOfRounds":               []int{10, 20, 50, 100},
+				},
+				"isGameRulesHaveMaxWin":            false,
+				"isBetsHistoryStartBalanceEnabled": false,
+				"isMaxUserMultiplierEnabled":       false,
+				"isShowActivePlayersWidget":        true,
+				"backToHomeActionType":             "navigate",
+				"inactivityTimeForDisconnect":      0,
+				"isActiveGameFocused":              false,
+				"isNetSessionEnabled":              false,
+				"fullBetTime":                      5000,
+				"minBet":                           1.0,
+				"isGameRulesHaveMinimumBankValue":  false,
+				"isShowTotalWinWidget":             true,
+				"isShowBetControlNumber":           false,
+				"betOptions":                       []float64{10, 20, 50, 100},
+				"modalShownOnInit":                 "none",
+				"isLiveBetsAndStatisticsHidden":    false,
+				"onLockUIActions":                  "cancelBet",
+				"isEmbeddedVideoHidden":            false,
+				"isBetTimerBranded":                true,
+				"defaultBetValue":                  1.0,
+				"maxUserWin":                       100000.0,
+				"isUseMaskedUsername":              true,
+				"isShowWinAmountUntilNextRound":    false,
+				"multiplierPrecision":              2,
+				"autoCashOut": map[string]interface{}{
+					"minValue":     1.01,
+					"defaultValue": 1.1,
+					"maxValue":     100.0,
+				},
+				"isMultipleBetsEnabled": true,
+				"engagementTools": map[string]interface{}{
+					"isExternalChatEnabled": false,
+				},
+				"isFreeBetsEnabled":                true,
+				"pingIntervalMs":                   15000,
+				"isLogoUrlHidden":                  false,
+				"chatApiVersion":                   2,
+				"currency":                         "MAD",
+				"showCrashExampleInRules":          false,
+				"isPodSelectAvailable":             true,
+				"returnToPlayer":                   97,
+				"isBalanceValidationEnabled":       true,
+				"isHolidayTheme":                   false,
+				"isGameRulesHaveMultiplierFormula": false,
+				"accountHistoryActionType":         "navigate",
+				"chat": map[string]interface{}{
+					"promo": map[string]interface{}{
+						"isEnabled": true,
+					},
+					"rain": map[string]interface{}{
+						"isEnabled":         false,
+						"rainMinBet":        1.0,
+						"defaultNumOfUsers": 5,
+						"minNumOfUsers":     3,
+						"maxNumOfUsers":     10,
+						"rainMaxBet":        100.0,
+					},
+					"isGifsEnabled":    true,
+					"sendMessageDelay": 5000.0,
+					"isEnabled":        false,
+					"maxMessages":      70,
+					"maxMessageLength": 160,
+				},
+				"ircDisplayType":           "modal",
+				"gameRulesAutoCashOutType": "default",
+			},
+			"roundId":           8241983,
+			"stageId":           2,
+			"currentMultiplier": 1.17,
 		},
-		"c": "init",
 	}
 
 	packet := BuildSFSMessage(13, 1, p)
@@ -1410,52 +1758,42 @@ func handleH5spin(conn *websocket.Conn, obj map[string]interface{}) {
 	fmt.Printf("obj: %+v\n", obj)
 
 	// 从obj中提取所有参数
-	//entity, _ := obj["entity"].(map[string]interface{})
-	//betRequest, _ := entity["betRequest"].(map[string]interface{})
-	//
-	//// 从betRequest中提取参数
-	//betType, _ := betRequest["betType"].(string)          // QuantityGame
-	//quantityBet, _ := betRequest["quantityBet"].(float64) // 1
-	//
-	//// 从entity中提取其他参数
-	//buyFeatureType, _ := entity["buyFeatureType"]      // null
-	//denom, _ := entity["denom"].(float64)              // 10
-	//extraBetType, _ := entity["extraBetType"].(string) // NoExtraBet
-	//gameStateId, _ := entity["gameStateId"].(float64)  // 0
-	//playerBet, _ := entity["playerBet"].(float64)      // 20
-	//
-	//fmt.Printf("解析参数: betType=%s, quantityBet=%v, buyFeatureType=%v, denom=%v, extraBetType=%s, gameStateId=%v, playerBet=%v\n",
-	//	betType, quantityBet, buyFeatureType, denom, extraBetType, gameStateId, playerBet)
-	//  spinResultStr := "{"spinResult":{"gameStateCount":3,"gameStateResult":[{"gameStateId":0,"currentState":1,"gameStateType":"GS_001","roundCount":0,"stateWin":0},{"gameStateId":1,"currentState":2,"gameStateType":"GS_161","roundCount":1,"roundResult":[{"roundWin":0,"screenResult":{"tableIndex":0,"screenSymbol":[[4,10,10,6,8],[10,10,3,3,9],[9,8,8,5,5],[8,3,3,6,6],[5,6,6,8,8],[10,4,4,9,9]],"dampInfo":[[4,8],[6,9],[9,6],[8,0],[5,10],[10,2]]},"extendGameStateResult":{"screenScatterTwoPositionList":[[[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]]],"screenMultiplier":[],"roundMultiplier":1,"screenWinsInfo":[{"playerWin":0,"quantityWinResult":[],"gameWinType":"QuantityGame"}],"extendWin":0,"gameDescriptor":{"version":1,"cascadeComponent":[[null]]}},"progressResult":{"maxTriggerFlag":true,"stepInfo":{"currentStep":1,"addStep":0,"totalStep":1},"stageInfo":{"currentStage":1,"totalStage":1,"addStage":0},"roundInfo":{"currentRound":1,"totalRound":1,"addRound":0}},"displayResult":{"accumulateWinResult":{"beforeSpinFirstStateOnlyBasePayAccWin":0,"afterSpinFirstStateOnlyBasePayAccWin":0,"beforeSpinAccWin":0,"afterSpinAccWin":0},"readyHandResult":{"displayMethod":[[false],[false],[false],[false],[false],[false]]},"boardDisplayResult":{"winRankType":"Nothing","displayBet":0}},"gameResult":{"playerWin":0,"quantityGameResult":{"playerWin":0,"quantityWinResult":[],"gameWinType":"QuantityGame"},"cascadeEliminateResult":[],"gameWinType":"CascadeGame"}}],"stateWin":0},{"gameStateId":5,"currentState":3,"gameStateType":"GS_002","roundCount":0,"stateWin":0}],"totalWin":0,"boardDisplayResult":{"winRankType":"Nothing","scoreType":"Nothing","displayBet":20},"gameFlowResult":{"IsBoardEndFlag":true,"currentSystemStateId":5,"systemStateIdOptions":[0]}},"ts":1747793347489,"balance":1999.78,"gameSeq":7480749037627}"
-
-	//spinResultStr := GetSpinResult(conn, obj)
-
-	// 从obj中提取所有参数
 	entity, _ := obj["entity"].(map[string]interface{})
+	// 内嵌的下注请求结构
+	// (utf_string) betType: LineGame
+	// 投注类型，此处为“线型游戏”模式（常见于老虎机）
+	//(int) betLine: 1
+	// 下注的线数，例如下注 1 条赔付线
+	// (int) lineBet: 10
+	// 每条线上的投注额，例如每线下注 10（单位为 denom）
 	betRequest, _ := entity["betRequest"].(map[string]interface{})
 
 	// 从betRequest中提取参数
-	//betType, _ := betRequest["betType"].(string)  // QuantityGame
-	//betColumn, _ := betRequest["betColumn"].(int) // 1
-	wayBet, _ := betRequest["wayBet"].(int32) // 1
+	betType, _ := betRequest["betType"].(string)          // QuantityGame LineGame // 投注类型，此处为“线型游戏”模式（常见于老虎机）
+	quantityBet, _ := betRequest["quantityBet"].(float64) // 1
 
 	// 从entity中提取其他参数
-	//buyFeatureType, _ := entity["buyFeatureType"]      // null
-	denom, _ := entity["denom"].(string)               // 10
-	extraBetType, _ := entity["extraBetType"].(string) // NoExtraBet
-	gameStateId, _ := entity["gameStateId"].(string)   // 0
-	playerBet, _ := entity["playerBet"].(string)       // 20
+	buyFeatureType, _ := entity["buyFeatureType"]      // null 是否购买特殊功能
+	denom, _ := entity["denom"].(float64)              // 10 投注额
+	extraBetType, _ := entity["extraBetType"].(string) // NoExtraBet “无额外投注” 模式（NoExtraBet）
+	gameStateId, _ := entity["gameStateId"].(float64)  // 0 一般用于同步状态（如开始、进行中、结算）
+	playerBet, _ := entity["playerBet"].(float64)      // 20 玩家实际下注总额（一般是 denom × lineBet × betLine）
 
-	bet, _ := strconv.Atoi(playerBet)
-	gameContext := NewRicherGameContext("test1", 1)
-	spinResult, _ := gameContext.Spin(context.Background(), denom, extraBetType, gameStateId, bet, int(wayBet)) // bet/betColumn*10
-	spinResultStr, _ := json.Marshal(spinResult)
+	fmt.Printf("解析参数: betType=%s, quantityBet=%v, buyFeatureType=%v, denom=%v, extraBetType=%s, gameStateId=%v, playerBet=%v\n",
+		betType, quantityBet, buyFeatureType, denom, extraBetType, gameStateId, playerBet)
+	//   spinResultStr := "{"spinResult":{"gameStateCount":3,"gameStateResult":[{"gameStateId":0,"currentState":1,"gameStateType":"GS_001","roundCount":0,"stateWin":0},{"gameStateId":1,"currentState":2,"gameStateType":"GS_161","roundCount":1,"roundResult":[{"roundWin":0,"screenResult":{"tableIndex":0,"screenSymbol":[[4,10,10,6,8],[10,10,3,3,9],[9,8,8,5,5],[8,3,3,6,6],[5,6,6,8,8],[10,4,4,9,9]],"dampInfo":[[4,8],[6,9],[9,6],[8,0],[5,10],[10,2]]},"extendGameStateResult":{"screenScatterTwoPositionList":[[[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]]],"screenMultiplier":[],"roundMultiplier":1,"screenWinsInfo":[{"playerWin":0,"quantityWinResult":[],"gameWinType":"QuantityGame"}],"extendWin":0,"gameDescriptor":{"version":1,"cascadeComponent":[[null]]}},"progressResult":{"maxTriggerFlag":true,"stepInfo":{"currentStep":1,"addStep":0,"totalStep":1},"stageInfo":{"currentStage":1,"totalStage":1,"addStage":0},"roundInfo":{"currentRound":1,"totalRound":1,"addRound":0}},"displayResult":{"accumulateWinResult":{"beforeSpinFirstStateOnlyBasePayAccWin":0,"afterSpinFirstStateOnlyBasePayAccWin":0,"beforeSpinAccWin":0,"afterSpinAccWin":0},"readyHandResult":{"displayMethod":[[false],[false],[false],[false],[false],[false]]},"boardDisplayResult":{"winRankType":"Nothing","displayBet":0}},"gameResult":{"playerWin":0,"quantityGameResult":{"playerWin":0,"quantityWinResult":[],"gameWinType":"QuantityGame"},"cascadeEliminateResult":[],"gameWinType":"CascadeGame"}}],"stateWin":0},{"gameStateId":5,"currentState":3,"gameStateType":"GS_002","roundCount":0,"stateWin":0}],"totalWin":0,"boardDisplayResult":{"winRankType":"Nothing","scoreType":"Nothing","displayBet":20},"gameFlowResult":{"IsBoardEndFlag":true,"currentSystemStateId":5,"systemStateIdOptions":[0]}},"ts":1747793347489,"balance":1999.78,"gameSeq":7480749037627}"
+
+	spinResultStr := ""
+
+	switch extraBetType {
+	default:
+		spinResultStr = GetSpinResult(conn, obj)
+	}
 
 	p := map[string]interface{}{
 		"p": map[string]interface{}{
 			"code":   "spinResponse",
-			"entity": spinResultStr,
-			//"entity": []byte(spinResultStr),
+			"entity": []byte(spinResultStr),
 		},
 		"c": "h5.spinResponse",
 	}
@@ -1467,11 +1805,10 @@ func handleH5spin(conn *websocket.Conn, obj map[string]interface{}) {
 }
 
 func handleH5Init(conn *websocket.Conn, obj map[string]interface{}) {
-	//entityStr := "{\"maxBet\":9223372036854775807,\"minBet\":0,\"defaultLineBetIdx\":-1,\"defaultBetLineIdx\":-1,\"defaultWaysBetIdx\":-1,\"defaultWaysBetColumnIdx\":-1,\"defaultConnectBetIdx\":-1,\"defaultQuantityBetIdx\":0,\"betCombinations\":{\"10_0_NoExtraBet\":200,\"1_0_NoExtraBet\":20,\"2_0_NoExtraBet\":40,\"3_0_NoExtraBet\":60,\"5_0_NoExtraBet\":100},\"singleBetCombinations\":{\"10_10_0_NoExtraBet\":200,\"10_1_0_NoExtraBet\":20,\"10_2_0_NoExtraBet\":40,\"10_3_0_NoExtraBet\":60,\"10_5_0_NoExtraBet\":100},\"gambleLimit\":0,\"gambleTimes\":0,\"gameFeatureCount\":3,\"executeSetting\":{\"settingId\":\"v3_14087_05_01_201\",\"betSpecSetting\":{\"paymentType\":\"PT_033\",\"extraBetTypeList\":[\"NoExtraBet\"],\"betSpecification\":{\"quantityBetList\":[1,2,3,5,10],\"betType\":\"QuantityGame\"},\"buyFeature\":{\"BuyFeature_01\":75}},\"gameStateSetting\":[{\"gameStateType\":\"GS_161\",\"frameSetting\":{\"screenColumn\":6,\"screenRow\":5,\"wheelUsePattern\":\"PositionDependence\"},\"tableSetting\":{\"tableCount\":2,\"tableHitProbability\":[0.8,0.2],\"wheelData\":[[{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[8,2,2,7,7,9,4,4,3,3,7,7,4,4,10,10,5,5,10,10,0,6,6,8,8,5,5,3,4,4,9,9,5,5,8,8,4,4,10,10,6,8,8,5,5,10,10,3,3,0,2,2,4,10,10,7,7,2,2,6,6,7,7,8,8,5,5,9,9,10,10,2,2,2,8,8,10,10,3,3,9,9,4,4,10,10,10,9,9,4,4,10,10,2,2,9,9,9,9,8]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[9,9,7,7,7,8,10,10,5,5,7,7,3,3,8,8,5,5,10,10,0,7,7,4,4,7,7,7,4,4,9,9,2,2,10,10,7,7,9,9,8,8,5,5,6,6,5,5,9,9,3,3,8,8,7,7,9,4,4,10,10,0,8,8,5,5,6,6,10,10,3,3,9,9,8,8,4,4,10,10,9,9,5,5,9,9,5,5,8,8,10,10,0,7,7,4,4,9,9,6]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[3,3,10,10,6,7,9,9,5,5,7,7,3,3,10,10,5,5,9,9,0,7,7,4,4,7,7,7,4,4,9,9,2,2,10,10,7,7,9,9,8,8,5,5,6,6,5,5,9,9,3,3,8,8,7,7,9,4,4,10,10,0,8,8,5,5,6,6,10,10,8,8,5,5,6,6,9,9,4,4,8,8,10,10,9,9,5,5,8,8,10,10,2,7,7,4,4,7,7,9]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[7,0,4,4,9,10,10,10,7,7,10,10,2,2,8,8,3,3,6,6,0,10,10,7,7,6,6,6,4,4,7,7,3,3,8,8,5,5,6,6,8,8,3,3,6,6,9,9,4,4,10,10,8,8,9,9,5,5,6,6,6,0,8,8,3,3,10,10,10,8,8,7,7,4,4,9,9,6,6,3,3,10,9,9,7,7,10,10,9,9,4,7,7,10,10,5,5,7,7,10]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[9,9,6,6,6,5,0,9,6,6,10,10,6,6,7,7,10,10,5,5,0,8,8,6,6,8,8,8,4,4,9,9,5,5,9,9,10,10,8,8,7,7,5,5,4,4,8,8,10,10,2,2,3,3,0,4,4,6,6,9,9,0,8,8,5,5,9,9,10,10,4,4,6,6,3,3,10,10,8,8,9,9,10,10,5,5,0,9,9,4,4,10,10,7,7,2,2,6,6,6]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[10,5,5,8,8,0,5,5,2,2,8,8,10,6,6,6,10,10,9,9,0,10,10,3,3,6,6,6,4,4,7,7,3,3,8,8,9,9,6,6,8,8,5,5,6,6,5,5,10,10,9,9,8,8,7,7,2,2,8,8,7,7,0,6,6,5,5,8,8,4,4,3,3,10,10,8,8,9,9,2,2,10,10,4,4,9,9,2,7,7,4,4,4,6,6,5,5,6,6,6]}],[{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[8,2,2,7,7,9,4,4,3,3,7,7,4,4,10,10,5,5,10,10,0,6,6,8,8,5,5,3,4,4,9,9,5,5,8,8,4,4,10,10,6,8,8,5,5,10,10,3,3,0,2,2,4,10,10,7,7,2,2,6,6,7,7,8,8,5,5,9,9,10,10,2,2,2,8,8,10,10,3,3,9,9,4,4,10,10,10,9,9,4,4,10,10,2,2,9,9,9,9,8]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[9,9,7,7,7,8,10,10,5,5,7,7,3,3,8,8,5,5,10,10,0,7,7,4,4,7,7,7,4,4,9,9,2,2,10,10,7,7,9,9,8,8,5,5,6,6,5,5,9,9,3,3,8,8,7,7,9,4,4,10,10,0,8,8,5,5,6,6,10,10,3,3,9,9,8,8,4,4,10,10,9,9,5,5,9,9,5,5,8,8,10,10,0,7,7,4,4,9,9,6]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[3,3,10,10,6,7,9,9,5,5,7,7,3,3,10,10,5,5,9,9,0,7,7,4,4,7,7,7,4,4,9,9,2,2,10,10,7,7,9,9,8,8,5,5,6,6,5,5,9,9,3,3,8,8,7,7,9,4,4,10,10,0,8,8,5,5,6,6,10,10,8,8,5,5,6,6,9,9,4,4,8,8,10,10,9,9,5,5,8,8,10,10,2,7,7,4,4,7,7,9]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[7,0,4,4,9,10,10,10,7,7,10,10,2,2,8,8,3,3,6,6,0,10,10,7,7,6,6,6,4,4,7,7,3,3,8,8,5,5,6,6,8,8,3,3,6,6,9,9,4,4,10,10,8,8,9,9,5,5,6,6,6,0,8,8,3,3,10,10,10,8,8,7,7,4,4,9,9,6,6,3,3,10,9,9,7,7,10,10,9,9,4,7,7,10,10,5,5,7,7,10]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[9,9,6,6,6,5,0,9,6,6,10,10,6,6,7,7,10,10,5,5,0,8,8,6,6,8,8,8,4,4,9,9,5,5,9,9,10,10,8,8,7,7,5,5,4,4,8,8,10,10,2,2,3,3,0,4,4,6,6,9,9,0,8,8,5,5,9,9,10,10,4,4,6,6,3,3,10,10,8,8,9,9,10,10,5,5,0,9,9,4,4,10,10,7,7,2,2,6,6,6]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[10,5,5,8,8,0,5,5,2,2,8,8,10,6,6,6,10,10,9,9,0,10,10,3,3,6,6,6,4,4,7,7,3,3,8,8,9,9,6,6,8,8,5,5,6,6,5,5,10,10,9,9,8,8,7,7,2,2,8,8,7,7,0,6,6,5,5,8,8,4,4,3,3,10,10,8,8,9,9,2,2,10,10,4,4,9,9,2,7,7,4,4,4,6,6,5,5,6,6,6]}]]},\"symbolSetting\":{\"symbolCount\":11,\"symbolAttribute\":[\"FreeGame_01\",\"BonusGame_01\",\"M1\",\"M2\",\"M3\",\"M4\",\"A\",\"K\",\"Q\",\"J\",\"TE\"],\"payTable\":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,200,200,500,500,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000],[0,0,0,0,0,0,0,50,50,200,200,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500],[0,0,0,0,0,0,0,40,40,100,100,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300],[0,0,0,0,0,0,0,30,30,40,40,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240],[0,0,0,0,0,0,0,20,20,30,30,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200],[0,0,0,0,0,0,0,16,16,24,24,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160],[0,0,0,0,0,0,0,10,10,20,20,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100],[0,0,0,0,0,0,0,8,8,18,18,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80],[0,0,0,0,0,0,0,5,5,15,15,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40]],\"mixGroupCount\":0},\"lineSetting\":{\"maxBetLine\":0},\"gameHitPatternSetting\":{\"gameHitPattern\":\"QuantityGame\",\"maxEliminateTimes\":0},\"specialFeatureSetting\":{\"specialFeatureCount\":3,\"specialHitInfo\":[{\"specialHitPattern\":\"HP_109\",\"triggerEvent\":\"Trigger_01\",\"basePay\":3},{\"specialHitPattern\":\"HP_110\",\"triggerEvent\":\"Trigger_02\",\"basePay\":5},{\"specialHitPattern\":\"HP_124\",\"triggerEvent\":\"Trigger_03\",\"basePay\":100}]},\"progressSetting\":{\"triggerLimitType\":\"NoLimit\",\"stepSetting\":{\"defaultStep\":1,\"addStep\":0,\"maxStep\":1},\"stageSetting\":{\"defaultStage\":1,\"addStage\":0,\"maxStage\":1},\"roundSetting\":{\"defaultRound\":1,\"addRound\":0,\"maxRound\":1}},\"displaySetting\":{\"readyHandSetting\":{\"readyHandLimitType\":\"NoReadyHandLimit\",\"readyHandCount\":1,\"readyHandType\":[\"ReadyHand_34\"]}},\"extendSetting\":{\"eliminatedMaxTimes\":999,\"scatterC1Id\":0,\"scatterC2Id\":1,\"scatterMultiplier\":[2,3,5,8,10,12,15,18,20,25,35,50,100],\"scatterMultiplierWeight\":[100,100,1000,200,120,600,50,30,20,10,5,4,2],\"scatterMultiplierNoHitWeight\":[200,250,300,500,350,200,150,100,80,30,20,4,2],\"triggerRound\":{\"Trigger_01\":{\"defaultRound\":1,\"addRound\":0,\"maxRound\":1},\"Trigger_02\":{\"defaultRound\":1,\"addRound\":0,\"maxRound\":1},\"Trigger_03\":{\"defaultRound\":1,\"addRound\":0,\"maxRound\":1}}}},{\"gameStateType\":\"GS_161\",\"frameSetting\":{\"screenColumn\":6,\"screenRow\":5,\"wheelUsePattern\":\"PositionDependence\"},\"tableSetting\":{\"tableCount\":1,\"tableHitProbability\":[1.0],\"wheelData\":[[{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[3,3,7,7,9,9,0,6,6,5,5,6,6,10,10,9,9,4,4,10,10,8,8,1,7,7,3,3,10,10,9,9,6,6,2,2,5,5,0,10,10,7,7,9,9,9,5,5,6,6,8,8,3,3,7,7,10,10,9,9,1,5,5,9,9,8,10,10,4,4,4,10,10,3,3,8,8,10,10,2,2,9,9,10,10]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[8,4,4,9,9,0,3,3,10,10,7,7,6,6,9,9,4,4,10,10,9,9,6,6,6,10,10,5,5,7,7,9,9,8,8,5,5,0,10,10,7,7,1,5,5,8,8,2,2,6,6,3,3,8,8,9,9,10,10,1,6,6,9,9,2,2,2,4,4,10,10,10,3,3,8,8,10,10,2,2,9,9,9,9,8]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[8,4,4,7,7,0,7,7,3,3,6,6,8,8,4,4,5,5,7,7,6,6,3,3,3,7,7,6,6,4,4,8,8,9,9,2,2,6,6,5,5,4,4,7,7,3,3,9,9,10,10,1,7,7,9,9,2,2,8,8,6,6,9,9,10,10,1,4,4,5,5,7,7,9,9,3,3,1,8,8,10,10,5,5,8]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[6,5,5,7,7,0,4,4,5,5,9,9,6,6,5,5,5,9,9,8,8,10,10,7,7,8,8,2,2,1,6,6,10,10,9,9,8,8,5,5,10,10,9,9,10,10,8,8,0,9,9,2,2,6,6,3,3,1,7,7,4,4,8,8,10,10,9,9,3,3,10,10,6,6,2,2,5,5,6,6,8,8,9,9,6]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[6,6,0,5,5,10,10,5,5,9,9,6,6,10,10,3,3,7,7,8,8,9,9,10,10,1,8,8,4,4,6,6,2,2,2,0,8,8,3,3,6,6,10,10,2,2,6,4,4,9,9,5,5,7,7,1,6,6,8,8,9,9,5,5,10,10,9,9,8,8,7,7,2,2,6,6,0,5,5,9,9,4,4,10,10]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[0,2,2,9,9,6,6,10,10,1,6,6,5,5,4,4,10,10,8,8,7,7,3,3,1,8,8,10,10,9,9,1,4,4,8,8,5,5,10,10,9,9,7,7,0,8,8,2,2,9,9,4,4,10,10,7,7,7,3,3,6,6,5,5,1,9,9,7,7,4,4,8,8,9,9,3,3,6,6,8,8,5,5,6,6]}]]},\"symbolSetting\":{\"symbolCount\":11,\"symbolAttribute\":[\"FreeGame_01\",\"BonusGame_01\",\"M1\",\"M2\",\"M3\",\"M4\",\"A\",\"K\",\"Q\",\"J\",\"TE\"],\"payTable\":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,200,200,500,500,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000],[0,0,0,0,0,0,0,50,50,200,200,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500],[0,0,0,0,0,0,0,40,40,100,100,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300],[0,0,0,0,0,0,0,30,30,40,40,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240],[0,0,0,0,0,0,0,20,20,30,30,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200],[0,0,0,0,0,0,0,16,16,24,24,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160],[0,0,0,0,0,0,0,10,10,20,20,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100],[0,0,0,0,0,0,0,8,8,18,18,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80],[0,0,0,0,0,0,0,5,5,15,15,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40]],\"mixGroupCount\":0},\"lineSetting\":{\"maxBetLine\":0},\"gameHitPatternSetting\":{\"gameHitPattern\":\"QuantityGame\",\"maxEliminateTimes\":0},\"specialFeatureSetting\":{\"specialFeatureCount\":4,\"specialHitInfo\":[{\"specialHitPattern\":\"HP_108\",\"triggerEvent\":\"ReTrigger_01\",\"basePay\":0},{\"specialHitPattern\":\"HP_109\",\"triggerEvent\":\"ReTrigger_02\",\"basePay\":0},{\"specialHitPattern\":\"HP_110\",\"triggerEvent\":\"ReTrigger_03\",\"basePay\":0},{\"specialHitPattern\":\"HP_124\",\"triggerEvent\":\"ReTrigger_04\",\"basePay\":0}]},\"progressSetting\":{\"triggerLimitType\":\"NoLimit\",\"stepSetting\":{\"defaultStep\":1,\"addStep\":0,\"maxStep\":1},\"stageSetting\":{\"defaultStage\":1,\"addStage\":0,\"maxStage\":1},\"roundSetting\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30}},\"displaySetting\":{\"readyHandSetting\":{\"readyHandLimitType\":\"NoReadyHandLimit\",\"readyHandCount\":1,\"readyHandType\":[\"ReadyHand_34\"]}},\"extendSetting\":{\"eliminatedMaxTimes\":999,\"scatterC1Id\":0,\"scatterC2Id\":1,\"scatterMultiplier\":[2,3,5,8,10,12,15,18,20,25,35,50,100],\"scatterMultiplierWeight\":[2100,1500,800,200,100,50,20,10,8,5,3,2,1],\"scatterMultiplierNoHitWeight\":[400,400,500,300,200,100,80,50,30,20,10,4,2],\"triggerRound\":{\"ReTrigger_01\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30},\"ReTrigger_02\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30},\"ReTrigger_03\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30},\"ReTrigger_04\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30}}}},{\"gameStateType\":\"GS_161\",\"frameSetting\":{\"screenColumn\":6,\"screenRow\":5,\"wheelUsePattern\":\"FeatureGenerator_01\"},\"tableSetting\":{\"tableCount\":1,\"tableHitProbability\":[1.0],\"wheelData\":[[{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[8,2,2,7,7,9,4,4,3,3,7,7,4,4,10,10,5,5,10,10,0,6,6,8,8,5,5,3,4,4,9,9,5,5,8,8,4,4,10,10,6,8,8,5,5,10,10,3,3,0,2,2,4,10,10,7,7,2,2,6,6,7,7,8,8,5,5,9,9,10,10,2,2,2,8,8,10,10,3,3,9,9,4,4,10,10,10,9,9,4,4,10,10,2,2,9,9,9,9,8]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[9,9,7,7,7,8,10,10,5,5,7,7,3,3,8,8,5,5,10,10,0,7,7,4,4,7,7,7,4,4,9,9,2,2,10,10,7,7,9,9,8,8,5,5,6,6,5,5,9,9,3,3,8,8,7,7,9,4,4,10,10,0,8,8,5,5,6,6,10,10,3,3,9,9,8,8,4,4,10,10,9,9,5,5,9,9,5,5,8,8,10,10,0,7,7,4,4,9,9,6]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[3,3,10,10,6,7,9,9,5,5,7,7,3,3,10,10,5,5,9,9,0,7,7,4,4,7,7,7,4,4,9,9,2,2,10,10,7,7,9,9,8,8,5,5,6,6,5,5,9,9,3,3,8,8,7,7,9,4,4,10,10,0,8,8,5,5,6,6,10,10,8,8,5,5,6,6,9,9,4,4,8,8,10,10,9,9,5,5,8,8,10,10,2,7,7,4,4,7,7,9]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[7,0,4,4,9,10,10,10,7,7,10,10,2,2,8,8,3,3,6,6,0,10,10,7,7,6,6,6,4,4,7,7,3,3,8,8,5,5,6,6,8,8,3,3,6,6,9,9,4,4,10,10,8,8,9,9,5,5,6,6,6,0,8,8,3,3,10,10,10,8,8,7,7,4,4,9,9,6,6,3,3,10,9,9,7,7,10,10,9,9,4,7,7,10,10,5,5,7,7,10]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[9,9,6,6,6,5,0,9,6,6,10,10,6,6,7,7,10,10,5,5,0,8,8,6,6,8,8,8,4,4,9,9,5,5,9,9,10,10,8,8,7,7,5,5,4,4,8,8,10,10,2,2,3,3,0,4,4,6,6,9,9,0,8,8,5,5,9,9,10,10,4,4,6,6,3,3,10,10,8,8,9,9,10,10,5,5,0,9,9,4,4,10,10,7,7,2,2,6,6,6]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[10,5,5,8,8,0,5,5,2,2,8,8,10,6,6,6,10,10,9,9,0,10,10,3,3,6,6,6,4,4,7,7,3,3,8,8,9,9,6,6,8,8,5,5,6,6,5,5,10,10,9,9,8,8,7,7,2,2,8,8,7,7,0,6,6,5,5,8,8,4,4,3,3,10,10,8,8,9,9,2,2,10,10,4,4,9,9,2,7,7,4,4,4,6,6,5,5,6,6,6]}]],\"screenControlSetting\":[{\"scatterId\":0,\"scatterPatternHitWeight\":[0,0,0,0,10000,77,5],\"scatterTargetColumn\":[0,1,2,3,4,5],\"repeatScatter\":false,\"continuous\":false}]},\"symbolSetting\":{\"symbolCount\":11,\"symbolAttribute\":[\"FreeGame_01\",\"BonusGame_01\",\"M1\",\"M2\",\"M3\",\"M4\",\"A\",\"K\",\"Q\",\"J\",\"TE\"],\"payTable\":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,50,50,200,200,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000],[0,0,0,0,0,0,0,30,30,100,100,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500],[0,0,0,0,0,0,0,20,20,80,80,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300],[0,0,0,0,0,0,0,10,10,30,30,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240],[0,0,0,0,0,0,0,8,8,20,20,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200],[0,0,0,0,0,0,0,5,5,10,10,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160],[0,0,0,0,0,0,0,3,3,8,8,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100],[0,0,0,0,0,0,0,2,2,5,5,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80],[0,0,0,0,0,0,0,1,1,3,3,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40]],\"mixGroupCount\":0},\"lineSetting\":{\"maxBetLine\":0},\"gameHitPatternSetting\":{\"gameHitPattern\":\"QuantityGame\",\"maxEliminateTimes\":0},\"specialFeatureSetting\":{\"specialFeatureCount\":3,\"specialHitInfo\":[{\"specialHitPattern\":\"HP_109\",\"triggerEvent\":\"Trigger_01\",\"basePay\":3},{\"specialHitPattern\":\"HP_110\",\"triggerEvent\":\"Trigger_02\",\"basePay\":5},{\"specialHitPattern\":\"HP_124\",\"triggerEvent\":\"Trigger_03\",\"basePay\":100}]},\"progressSetting\":{\"triggerLimitType\":\"NoLimit\",\"stepSetting\":{\"defaultStep\":1,\"addStep\":0,\"maxStep\":1},\"stageSetting\":{\"defaultStage\":1,\"addStage\":0,\"maxStage\":1},\"roundSetting\":{\"defaultRound\":1,\"addRound\":0,\"maxRound\":1}},\"displaySetting\":{\"readyHandSetting\":{\"readyHandLimitType\":\"NoReadyHandLimit\",\"readyHandCount\":1,\"readyHandType\":[\"ReadyHand_34\"]}},\"extendSetting\":{\"eliminatedMaxTimes\":999,\"scatterC1Id\":0,\"scatterC2Id\":1,\"scatterMultiplier\":[2,3,5,8,10,12,15,18,20,25,35,50,100],\"scatterMultiplierWeight\":[100,100,1000,200,120,600,50,30,20,10,5,4,2],\"scatterMultiplierNoHitWeight\":[200,250,300,500,350,200,150,100,80,30,20,4,2],\"triggerRound\":{\"Trigger_01\":{\"defaultRound\":1,\"addRound\":0,\"maxRound\":1},\"Trigger_02\":{\"defaultRound\":1,\"addRound\":0,\"maxRound\":1},\"Trigger_03\":{\"defaultRound\":1,\"addRound\":0,\"maxRound\":1}},\"noWinScreen\":{\"4\":[[[5,5,0,4,4],[5,10,10,10,0],[3,6,6,5,5],[6,6,0,7,7],[10,10,4,4,6],[0,7,7,3,3]],[[8,5,5,0,9],[5,9,9,0,6],[5,9,9,3,3],[4,4,10,2,2],[6,6,9,9,0],[3,3,10,10,0]],[[0,6,6,8,8],[4,10,10,9,9],[5,5,9,9,0],[6,6,0,10,10],[8,8,4,4,6],[9,0,10,10,3]],[[5,5,0,4,4],[9,9,0,6,6],[5,5,6,6,9],[7,3,3,10,10],[9,0,8,8,5],[3,3,10,10,0]],[[4,10,10,7,7],[9,8,8,10,3],[5,8,10,10,0],[3,10,10,0,7],[6,9,9,0,8],[6,6,0,7,7]]],\"5\":[[[5,5,9,9,10],[0,8,8,5,5],[0,9,9,4,4],[6,6,0,10,10],[0,8,8,6,6],[8,8,7,7,0]],[[0,9,9,10,10],[5,5,6,6,4],[5,9,9,0,6],[0,7,7,5,5],[5,5,6,6,0],[10,10,0,7,7]],[[10,0,6,6,8],[5,5,9,9,3],[4,10,10,0,8],[6,0,8,8,3],[6,6,0,8,8],[8,7,7,0,6]],[[9,9,4,4,0],[10,0,8,8,5],[5,8,10,10,0],[6,6,0,7,7],[7,7,5,5,6],[5,5,6,6,0]]],\"6\":[[[0,6,6,8,8],[4,4,10,10,0],[9,9,0,9,9],[3,3,6,6,0],[6,0,8,8,6],[10,9,9,0,10]],[[10,0,6,6,8],[0,8,8,5,5],[4,4,10,10,0],[3,3,6,6,0],[0,8,8,5,5],[8,7,7,0,6]],[[0,7,7,5,5],[9,0,6,6,4],[10,10,0,8,8],[0,7,7,5,5],[5,6,6,0,7],[6,0,7,7,3]],[[4,4,0,7,7],[5,9,9,0,6],[0,6,6,4,4],[6,0,7,7,3],[6,0,7,7,5],[3,3,10,10,0]]]}}},{\"gameStateType\":\"GS_161\",\"frameSetting\":{\"screenColumn\":6,\"screenRow\":5,\"wheelUsePattern\":\"PositionDependence\"},\"tableSetting\":{\"tableCount\":2,\"tableHitProbability\":[0.7,0.3],\"wheelData\":[[{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[3,3,7,7,9,9,0,6,6,5,5,6,6,10,10,9,9,4,4,10,10,8,8,1,7,7,3,3,10,10,9,9,6,6,2,2,5,5,0,10,10,7,7,9,9,9,5,5,6,6,8,8,3,3,7,7,10,10,9,9,1,5,5,9,9,8,10,10,4,4,4,10,10,3,3,8,8,10,10,2,2,9,9,10,10]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[8,4,4,9,9,0,3,3,10,10,7,7,6,6,9,9,4,4,10,10,9,9,6,6,6,10,10,5,5,7,7,9,9,8,8,5,5,0,10,10,7,7,1,5,5,8,8,2,2,6,6,3,3,8,8,9,9,10,10,1,6,6,9,9,2,2,2,4,4,10,10,10,3,3,8,8,10,10,2,2,9,9,9,9,8]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[8,4,4,7,7,0,7,7,3,3,6,6,8,8,4,4,5,5,7,7,6,6,3,3,3,7,7,6,6,4,4,8,8,9,9,2,2,6,6,5,5,4,4,7,7,3,3,9,9,10,10,1,7,7,9,9,2,2,8,8,6,6,9,9,10,10,1,4,4,5,5,7,7,9,9,3,3,1,8,8,10,10,5,5,8]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[6,5,5,7,7,0,4,4,5,5,9,9,6,6,5,5,5,9,9,8,8,10,10,7,7,8,8,2,2,1,6,6,10,10,9,9,8,8,5,5,10,10,9,9,10,10,8,8,0,9,9,2,2,6,6,3,3,1,7,7,4,4,8,8,10,10,9,9,3,3,10,10,6,6,2,2,5,5,6,6,8,8,9,9,6]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[6,6,0,5,5,10,10,5,5,9,9,6,6,10,10,3,3,7,7,8,8,9,9,10,10,1,8,8,4,4,6,6,2,2,2,0,8,8,3,3,6,6,10,10,2,2,6,4,4,9,9,5,5,7,7,1,6,6,8,8,9,9,5,5,10,10,9,9,8,8,7,7,2,2,6,6,0,5,5,9,9,4,4,10,10]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[0,2,2,9,9,6,6,10,10,1,6,6,5,5,4,4,10,10,8,8,7,7,3,3,1,8,8,10,10,9,9,1,4,4,8,8,5,5,10,10,9,9,7,7,0,8,8,2,2,9,9,4,4,10,10,7,7,7,3,3,6,6,5,5,1,9,9,7,7,4,4,8,8,9,9,3,3,6,6,8,8,5,5,6,6]}],[{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[3,3,7,7,9,9,0,6,6,5,5,6,6,10,10,9,9,4,4,10,10,8,8,1,7,7,3,3,10,10,9,9,6,6,2,2,5,5,0,10,10,7,7,9,9,9,5,5,6,6,8,8,3,3,7,7,10,10,9,9,1,5,5,9,9,8,10,10,4,4,4,10,10,3,3,8,8,10,10,2,2,9,9,10,10]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[8,4,4,9,9,0,3,3,10,10,7,7,6,6,9,9,4,4,10,10,9,9,6,6,6,10,10,5,5,7,7,9,9,8,8,5,5,0,10,10,7,7,1,5,5,8,8,2,2,6,6,3,3,8,8,9,9,10,10,1,6,6,9,9,2,2,2,4,4,10,10,10,3,3,8,8,10,10,2,2,9,9,9,9,8]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[8,4,4,7,7,0,7,7,3,3,6,6,8,8,4,4,5,5,7,7,6,6,3,3,3,7,7,6,6,4,4,8,8,9,9,2,2,6,6,5,5,4,4,7,7,3,3,9,9,10,10,1,7,7,9,9,2,2,8,8,6,6,9,9,10,10,1,4,4,5,5,7,7,9,9,3,3,1,8,8,10,10,5,5,8]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[6,5,5,7,7,0,4,4,5,5,9,9,6,6,5,5,5,9,9,8,8,10,10,7,7,8,8,2,2,1,6,6,10,10,9,9,8,8,5,5,10,10,9,9,10,10,8,8,0,9,9,2,2,6,6,3,3,1,7,7,4,4,8,8,10,10,9,9,3,3,10,10,6,6,2,2,5,5,6,6,8,8,9,9,6]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[6,6,0,5,5,10,10,5,5,9,9,6,6,10,10,3,3,7,7,8,8,9,9,10,10,1,8,8,4,4,6,6,2,2,2,0,8,8,3,3,6,6,10,10,2,2,6,4,4,9,9,5,5,7,7,1,6,6,8,8,9,9,5,5,10,10,9,9,8,8,7,7,2,2,6,6,0,5,5,9,9,4,4,10,10]},{\"wheelLength\":85,\"noWinIndex\":[0],\"wheelData\":[0,2,2,9,9,6,6,10,10,1,6,6,5,5,4,4,10,10,8,8,7,7,3,3,1,8,8,10,10,9,9,1,4,4,8,8,5,5,10,10,9,9,7,7,0,8,8,2,2,9,9,4,4,10,10,7,7,7,3,3,6,6,5,5,1,9,9,7,7,4,4,8,8,9,9,3,3,6,6,8,8,5,5,6,6]}]]},\"symbolSetting\":{\"symbolCount\":11,\"symbolAttribute\":[\"FreeGame_01\",\"BonusGame_01\",\"M1\",\"M2\",\"M3\",\"M4\",\"A\",\"K\",\"Q\",\"J\",\"TE\"],\"payTable\":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,200,200,500,500,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000,1000],[0,0,0,0,0,0,0,50,50,200,200,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500,500],[0,0,0,0,0,0,0,40,40,100,100,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300,300],[0,0,0,0,0,0,0,30,30,40,40,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240,240],[0,0,0,0,0,0,0,20,20,30,30,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200,200],[0,0,0,0,0,0,0,16,16,24,24,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160],[0,0,0,0,0,0,0,10,10,20,20,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100],[0,0,0,0,0,0,0,8,8,18,18,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80,80],[0,0,0,0,0,0,0,5,5,15,15,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40,40]],\"mixGroupCount\":0},\"lineSetting\":{\"maxBetLine\":0},\"gameHitPatternSetting\":{\"gameHitPattern\":\"QuantityGame\",\"maxEliminateTimes\":0},\"specialFeatureSetting\":{\"specialFeatureCount\":4,\"specialHitInfo\":[{\"specialHitPattern\":\"HP_108\",\"triggerEvent\":\"ReTrigger_01\",\"basePay\":0},{\"specialHitPattern\":\"HP_109\",\"triggerEvent\":\"ReTrigger_02\",\"basePay\":0},{\"specialHitPattern\":\"HP_110\",\"triggerEvent\":\"ReTrigger_03\",\"basePay\":0},{\"specialHitPattern\":\"HP_124\",\"triggerEvent\":\"ReTrigger_04\",\"basePay\":0}]},\"progressSetting\":{\"triggerLimitType\":\"NoLimit\",\"stepSetting\":{\"defaultStep\":1,\"addStep\":0,\"maxStep\":1},\"stageSetting\":{\"defaultStage\":1,\"addStage\":0,\"maxStage\":1},\"roundSetting\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30}},\"displaySetting\":{\"readyHandSetting\":{\"readyHandLimitType\":\"NoReadyHandLimit\",\"readyHandCount\":1,\"readyHandType\":[\"ReadyHand_34\"]}},\"extendSetting\":{\"eliminatedMaxTimes\":999,\"scatterC1Id\":0,\"scatterC2Id\":1,\"scatterMultiplier\":[2,3,5,8,10,12,15,18,20,25,35,50,100],\"scatterMultiplierWeight\":[2000,1500,800,200,100,50,20,10,8,5,3,2,1],\"scatterMultiplierNoHitWeight\":[400,400,500,300,200,100,80,50,30,20,10,4,2],\"triggerRound\":{\"ReTrigger_01\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30},\"ReTrigger_02\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30},\"ReTrigger_03\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30},\"ReTrigger_04\":{\"defaultRound\":10,\"addRound\":5,\"maxRound\":30}}}}],\"doubleGameSetting\":{\"doubleRoundUpperLimit\":5,\"doubleBetUpperLimit\":1000000000,\"rtp\":0.96,\"tieRate\":0.1},\"boardDisplaySetting\":{\"winRankSetting\":{\"BigWin\":10,\"MegaWin\":35,\"UltraWin\":80}},\"gameFlowSetting\":{\"conditionTableWithoutBoardEnd\":[[\"CD_False\",\"CD_38\",\"CD_False\",\"CD_37\",\"CD_False\"],[\"CD_False\",\"CD_False\",\"CD_12\",\"CD_False\",\"CD_False\"],[\"CD_False\",\"CD_False\",\"CD_False\",\"CD_False\",\"CD_False\"],[\"CD_False\",\"CD_False\",\"CD_False\",\"CD_False\",\"CD_12\"],[\"CD_False\",\"CD_False\",\"CD_False\",\"CD_False\",\"CD_False\"]]},\"reiterateSpinCriterion\":{\"oddsIntervalSetting\":[{\"minOdds\":0.0,\"maxOdds\":1.0E-4,\"rejectProb\":0.38},{\"minOdds\":1.0E-4,\"maxOdds\":1.0,\"rejectProb\":0.65},{\"minOdds\":1.0,\"maxOdds\":2.0,\"rejectProb\":0.99},{\"minOdds\":2.0,\"maxOdds\":3.0,\"rejectProb\":0.99},{\"minOdds\":3.0,\"maxOdds\":4.0,\"rejectProb\":0.9},{\"minOdds\":4.0,\"maxOdds\":5.0,\"rejectProb\":0.6},{\"minOdds\":5.0,\"maxOdds\":6.0,\"rejectProb\":0.5},{\"minOdds\":6.0,\"maxOdds\":7.0,\"rejectProb\":0.2},{\"minOdds\":50.0,\"maxOdds\":60.0,\"rejectProb\":0.1},{\"minOdds\":60.0,\"maxOdds\":70.0,\"rejectProb\":0.35},{\"minOdds\":70.0,\"maxOdds\":80.0,\"rejectProb\":0.4},{\"minOdds\":80.0,\"maxOdds\":90.0,\"rejectProb\":0.4},{\"minOdds\":90.0,\"maxOdds\":100.0,\"rejectProb\":0.3},{\"minOdds\":100.0,\"maxOdds\":110.0,\"rejectProb\":0.35},{\"minOdds\":110.0,\"maxOdds\":120.0,\"rejectProb\":0.3},{\"minOdds\":120.0,\"maxOdds\":130.0,\"rejectProb\":0.2},{\"minOdds\":130.0,\"maxOdds\":140.0,\"rejectProb\":0.2},{\"minOdds\":140.0,\"maxOdds\":150.0,\"rejectProb\":0.2},{\"minOdds\":150.0,\"maxOdds\":160.0,\"rejectProb\":0.1}]},\"rValue\":{\"NoExtraBet\":28934,\"BuyFeature_01\":28898}},\"denoms\":[10],\"defaultDenomIdx\":0,\"buyFeature\":true,\"buyFeatureLimit\":2147483647}"
-	entityStr := "{\"maxBet\":9223372036854775807,\"defaultWaysBetIdx\":0,\"singleBetCombinations\":{\"10_10_5_NoExtraBet\":500,\"10_1_5_NoExtraBet\":50,\"10_2_5_NoExtraBet\":100,\"10_3_5_NoExtraBet\":150,\"10_5_5_NoExtraBet\":250},\"minBet\":0,\"gambleTimes\":0,\"defaultLineBetIdx\":-1,\"defaultConnectBetIdx\":-1,\"defaultQuantityBetIdx\":-1,\"gameFeatureCount\":4,\"executeSetting\":{\"settingId\":\"v3_14047_05_01_001\",\"betSpecSetting\":{\"paymentType\":\"PT_004\",\"extraBetTypeList\":[\"NoExtraBet\"],\"betSpecification\":{\"wayBetList\":[1,2,3,5,10],\"betColumnList\":[5],\"betType\":\"WayGame\"}},\"gameStateSetting\":[{\"gameStateType\":\"GS_003\",\"frameSetting\":{\"screenColumn\":5,\"screenRow\":3,\"wheelUsePattern\":\"Dependent\"},\"tableSetting\":{\"tableCount\":1,\"tableHitProbability\":[1.0],\"wheelData\":[[{\"wheelLength\":142,\"noWinIndex\":[0],\"wheelData\":[8,7,1,9,9,4,7,4,5,7,3,8,2,2,7,1,6,3,8,4,6,1,3,5,7,3,7,5,3,9,4,1,9,4,1,9,6,6,6,2,7,7,7,1,9,3,2,2,2,9,1,4,9,6,5,5,5,1,6,7,8,3,6,7,1,9,8,6,7,2,8,7,1,9,6,8,9,6,1,8,8,8,2,9,7,6,8,7,1,9,4,7,9,6,5,7,3,8,2,9,7,1,6,3,8,9,6,1,3,7,6,5,9,3,7,1,5,3,6,4,1,9,4,6,7,2,1,7,9,9,3,3,3,1,4,4,4,9,6,5,5,5]},{\"wheelLength\":139,\"noWinIndex\":[0],\"wheelData\":[7,7,7,1,8,8,8,5,5,5,1,7,5,8,3,4,8,1,6,4,7,8,3,7,6,0,3,7,4,5,8,1,5,8,4,7,9,8,2,9,5,7,9,1,7,6,5,7,8,1,7,9,0,0,0,2,2,1,4,4,4,8,7,1,8,5,6,6,5,0,7,5,8,3,3,3,1,8,5,7,8,7,1,5,8,7,5,1,7,5,2,7,8,9,7,1,3,7,5,8,1,7,4,8,1,6,2,2,8,3,7,6,1,5,3,7,4,5,8,1,5,8,4,9,8,2,7,5,1,7,9,1,7,8,5,0,9,9,5]},{\"wheelLength\":142,\"noWinIndex\":[0],\"wheelData\":[4,4,5,1,2,8,8,4,1,6,4,4,6,5,7,8,0,3,7,1,8,3,9,2,8,5,9,1,5,9,6,8,1,7,4,6,7,1,9,4,4,8,8,9,1,3,3,9,8,3,1,8,6,6,4,8,6,4,0,0,0,9,5,5,7,1,9,8,5,7,7,9,2,2,1,8,9,8,4,9,3,1,9,4,9,2,8,4,9,8,4,9,3,8,1,4,9,9,4,1,9,4,4,6,5,7,4,8,3,9,8,3,9,2,8,5,9,1,5,9,6,8,1,2,2,6,7,1,9,4,0,4,8,1,3,9,8,3,1,8,6,6]},{\"wheelLength\":132,\"noWinIndex\":[0],\"wheelData\":[5,5,5,2,1,7,3,4,1,9,4,6,5,4,2,5,5,1,6,5,1,6,3,3,6,8,1,5,5,6,1,3,3,3,1,6,4,4,4,6,3,8,8,8,1,9,9,0,5,7,7,1,3,6,7,5,7,0,5,5,1,6,3,0,6,9,3,6,5,5,5,2,6,6,6,1,7,3,1,4,9,2,5,5,6,1,5,6,3,3,6,0,0,0,4,8,1,6,5,5,6,1,3,3,3,1,2,2,2,6,3,8,8,8,1,9,9,0,5,7,7,7,5,3,6,5,8,6,5,7,3,6]},{\"wheelLength\":121,\"noWinIndex\":[0],\"wheelData\":[7,6,9,1,4,7,2,8,6,4,9,6,1,4,4,6,8,3,7,5,5,1,2,2,2,9,8,8,0,3,6,9,4,4,4,8,6,6,6,1,8,5,5,5,7,7,7,1,8,3,9,1,6,3,8,9,2,2,7,6,1,9,9,9,8,7,6,3,8,1,9,3,6,8,4,2,7,6,9,1,4,7,2,9,1,6,9,3,4,4,0,0,0,3,7,1,3,3,3,9,8,8,1,5,7,7,1,4,4,4,0,8,6,6,5,8,3,9,1,1,1]}]]},\"symbolSetting\":{\"symbolCount\":10,\"symbolAttribute\":[\"Wild_01\",\"FreeGame_01\",\"M1\",\"M2\",\"M3\",\"M4\",\"A\",\"K\",\"Q\",\"J\"],\"payTable\":[[0,0,0,0,0],[0,0,0,0,0],[0,0,75,150,400],[0,0,50,150,300],[0,0,40,100,250],[0,0,30,100,200],[0,0,15,30,125],[0,0,15,30,125],[0,0,10,20,100],[0,0,10,20,100]],\"mixGroupCount\":0,\"mixGroupSetting\":[]},\"gameHitPatternSetting\":{\"gameHitPattern\":\"WayGame_LeftToRight\",\"maxEliminateTimes\":0},\"specialFeatureSetting\":{\"specialFeatureCount\":3,\"specialHitInfo\":[{\"specialHitPattern\":\"HP_88\",\"triggerEvent\":\"Trigger_01\",\"basePay\":0},{\"specialHitPattern\":\"HP_89\",\"triggerEvent\":\"Trigger_02\",\"basePay\":0},{\"specialHitPattern\":\"HP_90\",\"triggerEvent\":\"Trigger_03\",\"basePay\":0}]},\"progressSetting\":{\"triggerLimitType\":\"RoundLimit\",\"stepSetting\":{\"defaultStep\":1,\"addStep\":0,\"maxStep\":1},\"stageSetting\":{\"defaultStage\":1,\"addStage\":0,\"maxStage\":1},\"roundSetting\":{\"defaultRound\":1,\"addRound\":0,\"maxRound\":1}},\"displaySetting\":{\"readyHandSetting\":{\"readyHandLimitType\":\"NoReadyHandLimit\",\"readyHandCount\":1,\"readyHandType\":[\"ReadyHand_27\"]}}},{\"gameStateType\":\"GS_095\",\"frameSetting\":{\"screenColumn\":5,\"screenRow\":3,\"wheelUsePattern\":\"Dependent\"},\"tableSetting\":{\"tableCount\":1,\"tableHitProbability\":[1.0],\"wheelData\":[[{\"wheelLength\":118,\"noWinIndex\":[0],\"wheelData\":[8,7,1,2,7,4,5,7,8,2,5,7,1,6,3,8,4,6,1,3,7,2,7,5,3,9,4,1,9,2,7,6,6,2,9,7,7,1,9,2,3,8,6,2,9,8,1,4,9,6,5,5,1,7,8,3,6,7,1,9,8,6,7,2,5,7,9,6,1,2,6,9,2,6,8,7,1,9,4,7,9,6,5,7,3,8,2,9,7,1,6,3,8,9,6,1,2,7,6,5,9,3,7,1,5,3,6,4,1,9,4,6,7,3,1,4,4,4]},{\"wheelLength\":115,\"noWinIndex\":[0],\"wheelData\":[7,7,7,1,8,4,0,8,6,1,4,7,8,4,7,3,5,8,1,5,8,4,7,9,8,2,0,6,7,9,1,7,9,5,7,8,1,5,9,7,2,2,1,4,4,4,8,7,1,8,5,6,3,7,6,5,0,7,8,3,7,1,3,8,5,6,8,7,1,5,8,7,5,1,2,7,8,9,7,1,3,7,5,8,7,4,8,1,6,2,2,8,3,7,6,1,5,7,4,5,8,1,4,9,8,2,1,7,9,0,8,7,1,5,9]},{\"wheelLength\":115,\"noWinIndex\":[0],\"wheelData\":[4,4,5,2,8,8,4,1,6,7,4,5,6,7,8,0,3,7,1,8,3,9,2,8,5,7,1,5,7,6,8,1,4,6,7,1,9,8,0,3,9,1,3,9,8,3,1,8,6,6,0,7,6,4,8,9,5,4,1,8,7,2,8,7,9,5,2,1,9,8,3,9,8,4,9,8,4,9,3,8,1,4,9,9,4,1,7,6,5,7,8,3,9,8,3,6,8,5,9,1,5,9,6,7,2,1,9,6,4,8,1,3,9,8,3]},{\"wheelLength\":110,\"noWinIndex\":[0],\"wheelData\":[5,5,5,2,1,7,3,5,1,9,4,8,5,4,2,7,6,5,9,1,3,6,8,1,5,7,6,1,3,3,3,4,6,1,2,3,6,4,8,6,1,7,9,6,5,7,7,1,3,6,7,5,7,6,3,6,9,3,6,0,2,6,6,1,6,7,3,1,9,5,6,6,2,5,8,6,1,5,6,8,5,6,2,2,2,6,8,3,7,8,1,9,6,0,5,7,7,8,5,3,9,8,6,5,1,7,3,6,8,9]},{\"wheelLength\":100,\"noWinIndex\":[0],\"wheelData\":[7,6,9,1,4,7,2,8,6,4,9,6,1,4,8,6,4,5,3,7,9,1,2,2,2,9,8,3,6,9,4,4,4,8,6,6,6,5,1,4,8,7,5,1,8,3,9,1,3,8,9,2,6,9,2,1,7,9,3,8,9,0,3,9,6,8,4,9,6,1,4,7,2,8,9,1,4,9,6,4,3,9,7,1,2,3,7,9,1,3,3,3,8,8,5,4,8,9,1,3]}]]},\"symbolSetting\":{\"symbolCount\":10,\"symbolAttribute\":[\"Wild_01\",\"FreeGame_01\",\"M1\",\"M2\",\"M3\",\"M4\",\"A\",\"K\",\"Q\",\"J\"],\"payTable\":[[0,0,0,0,0],[0,0,0,0,0],[0,0,75,150,400],[0,0,50,150,300],[0,0,40,100,250],[0,0,30,100,200],[0,0,15,30,125],[0,0,15,30,125],[0,0,10,20,100],[0,0,10,20,100]],\"mixGroupCount\":0,\"mixGroupSetting\":[]},\"gameHitPatternSetting\":{\"gameHitPattern\":\"WayGame_LeftToRight\",\"maxEliminateTimes\":0},\"specialFeatureSetting\":{\"specialFeatureCount\":3,\"specialHitInfo\":[{\"specialHitPattern\":\"HP_88\",\"triggerEvent\":\"ReTrigger_01\",\"basePay\":0},{\"specialHitPattern\":\"HP_89\",\"triggerEvent\":\"ReTrigger_01\",\"basePay\":0},{\"specialHitPattern\":\"HP_90\",\"triggerEvent\":\"ReTrigger_01\",\"basePay\":0}]},\"progressSetting\":{\"triggerLimitType\":\"RoundLimit\",\"stepSetting\":{\"defaultStep\":1,\"addStep\":0,\"maxStep\":1},\"stageSetting\":{\"defaultStage\":1,\"addStage\":0,\"maxStage\":1},\"roundSetting\":{\"defaultRound\":12,\"addRound\":12,\"maxRound\":50}},\"displaySetting\":{\"readyHandSetting\":{\"readyHandLimitType\":\"NoReadyHandLimit\",\"readyHandCount\":1,\"readyHandType\":[\"ReadyHand_27\"]}},\"extendSetting\":{\"oddsRadix\":1,\"oddsAddition\":1,\"triggerOddsRadix\":{\"Trigger_01\":1,\"Trigger_02\":2,\"Trigger_03\":3},\"freeGameFlag\":false,\"buyFeatureFlag\":false}}],\"doubleGameSetting\":{\"doubleRoundUpperLimit\":5,\"doubleBetUpperLimit\":1000000000,\"rtp\":0.96,\"tieRate\":0.1},\"boardDisplaySetting\":{\"winRankSetting\":{\"BigWin\":30,\"MegaWin\":220,\"UltraWin\":350}},\"gameFlowSetting\":{\"conditionTableWithoutBoardEnd\":[[\"CD_False\",\"CD_True\",\"CD_False\"],[\"CD_False\",\"CD_False\",\"CD_15\"],[\"CD_False\",\"CD_False\",\"CD_False\"]]},\"rValue\":{\"NoExtraBet\":28859}},\"denoms\":[10],\"defaultDenomIdx\":0,\"defaultBetLineIdx\":-1,\"betCombinations\":{\"10_5_NoExtraBet\":500,\"1_5_NoExtraBet\":50,\"2_5_NoExtraBet\":100,\"3_5_NoExtraBet\":150,\"5_5_NoExtraBet\":250},\"gambleLimit\":0,\"buyFeatureLimit\":2147483647,\"buyFeature\":true,\"defaultWaysBetColumnIdx\":0}"
 	// fmt.Println("解析结果11:", entityStr)
 	// entityBytes := StringToUint16Array(entityStr)
 	// fmt.Println("解析结果11:", entityBytes)
+	entityStr := getGameConfig()
 	p := map[string]interface{}{
 		"p": map[string]interface{}{
 			"code":   "initResponse",
@@ -1494,7 +1831,7 @@ func handleGameLogin(conn *websocket.Conn, obj map[string]interface{}) {
 			"balance":   2000.0,
 			"testMode":  false,
 			"serverId":  "04",
-			"ts":        time.Now().UnixMilli(),
+			"ts":        int64(1747365908909),
 		},
 		"c": "gameLoginReturn",
 	}
@@ -1638,6 +1975,7 @@ func stringToUtf16Bytes(input string) []byte {
 	return result
 }
 func GetSpinResult(conn *websocket.Conn, obj map[string]interface{}) string {
+	playerBet, _ := obj["playerBet"].(float64) //实际下注额
 	GS_001 := GameState{
 		GameStateId:   0,        // 游戏状态ID
 		CurrentState:  1,        // 当前状态
@@ -1646,36 +1984,57 @@ func GetSpinResult(conn *websocket.Conn, obj map[string]interface{}) string {
 		StateWin:      0,        // 该状态获得的奖金
 	}
 	GS_002 := GameState{
-		GameStateId:   5,        // 游戏状态ID
+		GameStateId:   3,        // 游戏状态ID
 		CurrentState:  3,        // 当前状态
 		GameStateType: "GS_002", // 游戏状态类型
 		RoundCount:    0,        // 回合数
 		StateWin:      0,        // 该状态获得的奖金
 	}
-	GS_161_1 := getGS161()
+	///GS_161_1 := getGS161()
+	GS_112_1, Special := getGS112(playerBet)
+	GS_113 := GameState{}
+	gameStateResult := []GameState{}
+	systemStateIdOptions := []int{0}
+	totalWin := GS_112_1.StateWin
+	if len(Special) > 0 {
+		fmt.Println("特殊模式")
+		GS_113 = getGS113(playerBet)
+		GS_002.CurrentState = 4
+		totalWin = GS_113.StateWin
 
+		gameStateResult = []GameState{
+			GS_001,
+			GS_112_1,
+			GS_113,
+			GS_002,
+		}
+		systemStateIdOptions = []int{0, 997}
+	} else {
+		fmt.Println("普通模式")
+		gameStateResult = []GameState{
+			GS_001,
+			GS_112_1,
+			GS_002,
+		}
+	}
 	// 构建最顶层对象
 	result := SpinResultWrapper{
 		TS:      time.Now().UnixMilli(), // 当前时间戳(毫秒)
 		Balance: 1999.78,                // 玩家余额
 		GameSeq: 7480749037627,          // 游戏序列号
 		SpinResult: SpinResult{
-			GameStateCount: 3, // 游戏状态总数
-			GameStateResult: []GameState{
-				GS_001,
-				GS_161_1,
-				GS_002,
-			},
-			TotalWin: 0, // 总奖金
+			GameStateCount:  len(gameStateResult), // 游戏状态总数
+			GameStateResult: gameStateResult,
+			TotalWin:        totalWin, // 总奖金
 			BoardDisplayResult: BoardDisplay{
-				WinRankType: "Nothing", // 获奖等级类型
-				ScoreType:   "Nothing", // 分数类型
-				DisplayBet:  20,        // 显示的投注额
+				WinRankType: "Nothing",      // 获奖等级类型
+				ScoreType:   "Nothing",      // 分数类型
+				DisplayBet:  int(playerBet), // 用户本次 spin 投注额
 			},
 			GameFlowResult: GameFlowResult{
-				IsBoardEndFlag:       true,     // 面板是否结束标志
-				CurrentSystemStateId: 5,        // 当前系统状态ID
-				SystemStateIdOptions: []int{0}, // 系统状态ID选项
+				IsBoardEndFlag:       true,                 // 面板是否结束标志
+				CurrentSystemStateId: 3,                    // 当前系统状态ID
+				SystemStateIdOptions: systemStateIdOptions, // 系统状态ID选项
 			},
 		},
 	}
@@ -1690,44 +2049,67 @@ func GetSpinResult(conn *websocket.Conn, obj map[string]interface{}) string {
 	return string(jsonBytes)
 }
 
-func getGS161() GameState {
-	GS_161 := GameState{
+func getSpecialFeature(screen [][]int, damps [][]int) []SpecialFeatureResult {
+	SpecialFeature := []SpecialFeatureResult{}
+	if screen[0][0] == 0 && screen[1][0] == 1 && screen[2][0] == 0 {
+		SpecialFeature = []SpecialFeatureResult{
+			{
+				SpecialHitPattern: "HP_95",
+				TriggerEvent:      "Trigger_01",
+				SpecialScreenHitData: [][]bool{
+					{true},
+					{true},
+					{true},
+				},
+				SpecialScreenWin: 0,
+			},
+		}
+	}
+
+	return SpecialFeature
+}
+func getGS112(playerBet float64) (GameState, []SpecialFeatureResult) {
+	screen, dampInfos := GetSreenResult(true)
+	ExtendGameResult := getExtendGameStateResult(screen, dampInfos) //判断要不要再次旋转
+	SpecialFeature := getSpecialFeature(screen, dampInfos)
+	win := 0
+	symbol := -1
+	win1, symbol1 := GetRoundWin(screen)
+	symbol = symbol1
+	win = win1
+	if ExtendGameResult.ReSpinFlag == true {
+		SpecialFeature = getSpecialFeature(ExtendGameResult.ScreenSymbol, ExtendGameResult.DampInfo)
+		win2, symbol2 := GetRoundWin(ExtendGameResult.ScreenSymbol)
+		win = win2 + win1
+		symbol = symbol2
+	}
+
+	if len(SpecialFeature) <= 0 {
+		fmt.Println("没有特殊模式")
+		SpecialFeature = []SpecialFeatureResult{}
+	}
+	fmt.Println("特殊模式", SpecialFeature)
+
+	lineWin := getLineWinResult(win, symbol, playerBet)
+
+	GS_112 := GameState{
 		GameStateId:   1,        // 游戏状态ID
 		CurrentState:  2,        // 当前状态
-		GameStateType: "GS_161", // 游戏状态类型
+		GameStateType: "GS_112", // 游戏状态类型
 		RoundCount:    1,        // 回合数
 		RoundResult: []RoundResult{ //每个回合的详情
 			{
-				RoundWin: 0, // 该回合获得的奖金
+				RoundWin: win, // 该回合获得的奖金
 				ScreenResult: ScreenResult{
-					TableIndex:   1,                                                         // 表格索引 init 那个状态里的 第0 个表
-					ScreenSymbol: getRandomData(false),                                      // [][]int{{4, 10, 10, 6, 8}, {10, 10, 3, 3, 9}, {9, 8, 8, 5, 5}, {8, 3, 3, 6, 6}, {5, 6, 6, 8, 8}, {10, 4, 4, 9, 9}}, // 屏幕显示的符号 每列5
-					DampInfo:     [][]int{{4, 8}, {6, 9}, {9, 6}, {8, 0}, {5, 10}, {10, 2}}, // 信息
+					TableIndex:   0,         // 当前使用的赔率表或盘面索引                                               // 表格索引 init 那个状态里的 第0 个表
+					ScreenSymbol: screen,    // [][]int{{4, 10, 10, 6, 8}, {10, 10, 3, 3, 9}, {9, 8, 8, 5, 5}, {8, 3, 3, 6, 6}, {5, 6, 6, 8, 8}, {10, 4, 4, 9, 9}}, // 屏幕显示的符号 每列5
+					DampInfo:     dampInfos, // // 每列前后的遮罩或滑出符号（如滑动特效）
 				},
-				ExtendGameState: &ExtendGameState{
-					ScreenMultiplier: []interface{}{},
-					ScreenScatterTwoPositionList: [][][]int{
-						{
-							{0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0},
-						},
-					}, // Scatter符号位置列表
-					RoundMultiplier: 1, // 回合倍数
-					ScreenWinsInfo: []ScreenWinInfo{
-						{PlayerWin: 0, GameWinType: "QuantityGame", QuantityWinResult: []interface{}{}}, // 屏幕获奖信息
-					},
-					ExtendWin: 0, // 额外奖金
-					GameDescriptor: GameDescriptor{
-						Version:          1,                      // 版本号
-						CascadeComponent: [][]interface{}{{nil}}, // 消除组件
-					},
-				},
+
+				ExtendGameStateResult: ExtendGameResult,
+
 				ProgressResult: ProgressResult{
-					MaxTriggerFlag: true,                                                   // 是否达到最大触发次数
+					MaxTriggerFlag: true,                                                   // 是否触发最大进度或终点标志                                                  // 是否达到最大触发次数
 					StepInfo:       StepInfo{CurrentStep: 1, AddStep: 0, TotalStep: 1},     // 步骤信息
 					StageInfo:      StageInfo{CurrentStage: 1, TotalStage: 1, AddStage: 0}, // 阶段信息
 					RoundInfo:      RoundInfo{CurrentRound: 1, TotalRound: 1, AddRound: 0}, // 回合信息
@@ -1740,611 +2122,440 @@ func getGS161() GameState {
 						BeforeSpinAccWin:                      0, // 旋转前累积赢分
 
 					}, // 累积奖金结果
-					ReadyHandResult:    ReadyHandResult{DisplayMethod: [][]bool{{false}, {false}, {false}, {false}, {false}, {false}}}, // 准备手牌结果
-					BoardDisplayResult: BoardDisplay{WinRankType: "Nothing", DisplayBet: 0},                                            // 面板显示结果
+					ReadyHandResult:    ReadyHandResult{DisplayMethod: [][]bool{{false}, {false}, {false}}}, // 是否显示“听牌”/接近中奖的提示
+					BoardDisplayResult: BoardDisplay{WinRankType: "Nothing", DisplayBet: 0},                 // 无任何奖型      // 当前显示投注（本 round）                                 // 面板显示结果
 				},
 				GameResult: GameResult{
-					CascadeEliminateResult: []interface{}{}, //掉落信息
-					PlayerWin:              0,               // 玩家获得的奖金
-					QuantityGameResult: &QuantityGameResult{
-						PlayerWin:         0,              // 数量游戏获得的奖金
-						GameWinType:       "QuantityGame", // 游戏获奖类型
-						QuantityWinResult: []interface{}{},
-					},
-					GameWinType: "CascadeGame", // 游戏类型
+					PlayerWin:     win,        // 玩家获得的奖金
+					LineWinResult: lineWin,    // 空的中奖线 slice
+					GameWinType:   "LineGame", // 本轮属于线型游戏结果
 				},
+				SpecialFeatureResult: SpecialFeature,
 			},
 		},
-		StateWin: 0, // 该状态获得的奖金
+		StateWin: win, // 该状态获得的奖金
 	}
-	return GS_161
+	return GS_112, SpecialFeature
+}
+func getGS113(playerBet float64) GameState {
+
+	//	screen, dampInfos := getSpecialDataWithDampInfo(true)
+	var roundResults []RoundResult
+	AfterSpinAccWin := 0
+	AfterSpinFirstStateOnlyBasePayAccWin := 0
+	BeforeSpinFirstStateOnlyBasePayAccWin := 0
+	BeforeSpinAccWin := 0
+	for {
+		screen, dampInfos := getSpecialDataWithDampInfo(true)
+		win, symbol := GetRoundWin(screen)
+		ExtendGameResult := getExtendGameStateResult(screen, dampInfos) //判断要不要再次旋转
+		lineWin := getLineWinResult(win, symbol, playerBet)
+		AfterSpinFirstStateOnlyBasePayAccWin += win
+		AfterSpinAccWin += win
+		ExtendGameResult.ExtendWin = 0
+		ExtendGameResult.TriggerMusicFlag = false
+		// 添加当前结果到数组
+		roundResults = append(roundResults, RoundResult{
+			RoundWin: win, // 该回合获得的奖金
+			ScreenResult: ScreenResult{
+				TableIndex:   0,         // 当前使用的赔率表或盘面索引                                               // 表格索引 init 那个状态里的 第0 个表
+				ScreenSymbol: screen,    // [][]int{{4, 10, 10, 6, 8}, {10, 10, 3, 3, 9}, {9, 8, 8, 5, 5}, {8, 3, 3, 6, 6}, {5, 6, 6, 8, 8}, {10, 4, 4, 9, 9}}, // 屏幕显示的符号 每列5
+				DampInfo:     dampInfos, // // 每列前后的遮罩或滑出符号（如滑动特效）
+			},
+
+			ExtendGameStateResult: ExtendGameResult,
+
+			ProgressResult: ProgressResult{
+				MaxTriggerFlag: false,                                                                                          //todo                                                                                    // 是否触发最大进度或终点标志                                                  // 是否达到最大触发次数
+				StepInfo:       StepInfo{CurrentStep: 1, AddStep: 0, TotalStep: 1},                                             // 步骤信息
+				StageInfo:      StageInfo{CurrentStage: 1, TotalStage: 1, AddStage: 0},                                         // 阶段信息
+				RoundInfo:      RoundInfo{CurrentRound: len(roundResults) + 1, TotalRound: len(roundResults) + 1, AddRound: 1}, // 回合信息
+			},
+			DisplayResult: DisplayResult{
+				AccumulateWinResult: AccumulateWinResult{
+					AfterSpinAccWin:                       AfterSpinAccWin,                       // 累旋转后累积赢分
+					AfterSpinFirstStateOnlyBasePayAccWin:  AfterSpinFirstStateOnlyBasePayAccWin,  // 旋转后首状态仅基本支付累积赢分
+					BeforeSpinFirstStateOnlyBasePayAccWin: BeforeSpinFirstStateOnlyBasePayAccWin, // 旋转前首状态仅基本支付累积赢分
+					BeforeSpinAccWin:                      BeforeSpinAccWin,                      // 旋转前累积赢分
+
+				}, // 累积奖金结果
+				ReadyHandResult:    ReadyHandResult{DisplayMethod: [][]bool{{false}, {false}, {false}}}, // 是否显示“听牌”/接近中奖的提示
+				BoardDisplayResult: BoardDisplay{WinRankType: "Nothing", DisplayBet: 0},                 // 无任何奖型      // 当前显示投注（本 round）                                 // 面板显示结果
+			},
+			GameResult: GameResult{
+				PlayerWin:     win,        // 玩家获得的奖金
+				LineWinResult: lineWin,    // 空的中奖线 slice
+				GameWinType:   "LineGame", // 本轮属于线型游戏结果
+			},
+		})
+		BeforeSpinFirstStateOnlyBasePayAccWin += win
+		BeforeSpinAccWin += win
+		// 判断是否满足结束条件：screen[1][0] == 2
+		if screen[1][0] == 2 {
+			break
+		}
+	}
+
+	GS_113 := GameState{
+		GameStateId:   2,        // 游戏状态ID
+		CurrentState:  3,        // 当前状态
+		GameStateType: "GS_113", // 游戏状态类型
+		RoundCount:    1,        // 回合数
+		RoundResult:   roundResults,
+		StateWin:      AfterSpinAccWin, // 该状态获得的奖金
+	}
+	GS_113.RoundCount = len(GS_113.RoundResult)
+	return GS_113
 }
 
+func getLineWinResult(win int, symbol int, bet float64) []LineWinResult {
+	if win <= 0 {
+		return []LineWinResult{}
+	}
+
+	odds := payTable[symbol][2] // 获取该符号的3连赔率（假设第3个位置是3连）
+
+	result := LineWinResult{
+		LineId:         0, // 第0行
+		HitDirection:   "LeftToRight",
+		IsMixGroupFlag: false,
+		HitMixGroup:    -1,
+		HitSymbol:      symbol,                   // 命中符号
+		HitWay:         3,                        // 命中3格
+		HitOdds:        odds,                     // 赔率
+		LineWin:        int(float64(odds) * bet), // 奖励 = 赔率 × 下注额
+		ScreenHitData: [][]bool{
+			{true},
+			{true},
+			{true},
+		},
+	}
+
+	return []LineWinResult{result}
+}
+
+func getExtendGameStateResult(screen [][]int, damps [][]int) ExtendGameStateResult {
+	result := ExtendGameStateResult{
+		ReSpinFlag:   false, // 是否触发再旋转
+		ReSpinTimes:  0,     // 再旋转次数
+		ColumnRecord: 0,     // 列记录
+		SquintFlag:   false, // 是否斜视偏移
+		ExtendWin:    0,     // 扩展赢分
+
+	}
+	if screen[0][0] != 0 || screen[2][0] != 0 {
+		return result
+	}
+	rand := rand.Float64()
+	if screen[1][0] == 9 && rand > 0.5 { //50%概率触发再次旋转
+		result.ReSpinFlag = true
+		result.ReSpinTimes++
+		result.ColumnRecord = 2
+		result.SquintFlag = true
+		screenTwo, dampInfos := ReSpinClumnTwo(false)
+		result.ScreenSymbol = [][]int{ // 屏幕显示的符号
+			{screen[0][0]}, {screenTwo}, {screen[2][0]}, // 每列一个符号
+		}
+		result.DampInfo = [][]int{ // 每列对应的阻尼信息
+			damps[0], dampInfos, damps[2],
+		}
+		gamedesc := GameDescriptor{
+			Version: 1,
+			Component: [][]ComponentItem{
+				{
+					{
+						Type:  "labelWithPlaceholders",
+						Value: "getRespinGameWithTimes",
+						Placeholders: []Placeholder{
+							{
+								Type:  "text",
+								Value: "1",
+							},
+						},
+					},
+				},
+			},
+		}
+		result.GameDescriptor = gamedesc
+	} else {
+		result.SquintFlag = true
+	}
+	return result
+}
 func getGameConfig() string {
-	// 构建最顶层对象
-	result := EntitySetting{
+	resp := GameSettingResponse{
 		MaxBet:                  math.MaxInt64, // 使用 int64 的最大值
 		MinBet:                  0,
-		DefaultLineBetIdx:       -1,
-		DefaultBetLineIdx:       -1,
+		DefaultLineBetIdx:       0,
+		DefaultBetLineIdx:       0,
 		DefaultWaysBetIdx:       -1,
 		DefaultWaysBetColumnIdx: -1,
 		DefaultConnectBetIdx:    -1,
-		DefaultQuantityBetIdx:   0,
+		DefaultQuantityBetIdx:   -1,
 		BetCombinations: map[string]int{
-			"10_0_NoExtraBet": 200,
-			"1_0_NoExtraBet":  20,
-			"2_0_NoExtraBet":  40,
-			"3_0_NoExtraBet":  60,
-			"5_0_NoExtraBet":  100,
+			"10_1_NoExtraBet": 10,
+			"1_1_NoExtraBet":  1,
+			"2_1_NoExtraBet":  2,
+			"4_1_NoExtraBet":  4,
+			"5_1_NoExtraBet":  5,
 		},
 		SingleBetCombinations: map[string]int{
-			"10_10_0_NoExtraBet": 200,
-			"10_1_0_NoExtraBet":  20,
-			"10_2_0_NoExtraBet":  40,
-			"10_3_0_NoExtraBet":  60,
-			"10_5_0_NoExtraBet":  100,
+			"10_10_1_NoExtraBet": 10,
+			"10_1_1_NoExtraBet":  1,
+			"10_2_1_NoExtraBet":  2,
+			"10_4_1_NoExtraBet":  4,
+			"10_5_1_NoExtraBet":  5,
 		},
 		GambleLimit:      0,
 		GambleTimes:      0,
 		GameFeatureCount: 3,
-		ExecuteSetting: map[string]interface{}{
-			"settingId": "v3_14087_05_01_201",
-			"betSpecSetting": map[string]interface{}{
-				"paymentType":      "PT_033",
-				"extraBetTypeList": []string{"NoExtraBet"},
-				"betSpecification": map[string]interface{}{
-					"quantityBetList": []int{1, 2, 3, 5, 10},
-					"betType":         "QuantityGame",
-				},
-				"buyFeature": map[string]interface{}{
-					"BuyFeature_01": 75,
+		Denoms:           []int{10},
+		DefaultDenomIdx:  0,
+		BuyFeature:       true,
+		BuyFeatureLimit:  2147483647,
+
+		ExecuteSetting: ExecuteSetting{
+			SettingId: "v3_14054_05_01_001",
+			BetSpecSetting: BetSpecSetting{
+				PaymentType:      "PT_001",
+				ExtraBetTypeList: []string{"NoExtraBet"},
+				BetSpecification: BetSpecification{
+					LineBetList: []int{1, 2, 4, 5, 10},
+					BetLineList: []int{1},
+					BetType:     "LineGame",
 				},
 			},
-			"gameStateSetting": []map[string]interface{}{
-				map[string]interface{}{
-					"gameStateType": "GS_161",
-					"frameSetting": map[string]interface{}{
-						"screenColumn":    6,
-						"screenRow":       5,
-						"wheelUsePattern": "PositionDependence",
+			GameStateSetting: []GameStateSetting{
+				{
+					GameStateType: "GS_112",
+					FrameSetting: FrameSetting{
+						ScreenColumn:    3,
+						ScreenRow:       1,
+						WheelUsePattern: "Dependent",
 					},
-					"tableSetting": map[string]interface{}{
-						"tableCount":          2,
-						"tableHitProbability": []float64{0.8, 0.2}, // 可填 []float64{0.8, 0.2}
-						"wheelData": [][]map[string]interface{}{
+					TableSetting: TableSetting{
+						TableCount:          2,
+						TableHitProbability: []int{1, 0},
+						WheelData:           WheelData,
+					},
+					SymbolSetting: SymbolSetting{
+						SymbolCount:     10,
+						SymbolAttribute: []string{"Wild_01", "FreeGame_01", "FreeGame_02", "M1", "M2", "M3", "M4", "M5", "M6", "M7"},
+						PayTable:        payTable,
+						MixGroupCount:   0,
+						MixGroupSetting: []any{},
+					},
+					LineSetting: LineSetting{
+						MaxBetLine: 1,
+						LineTable: [][]int{
+							{0, 0, 0},
+						},
+					},
+					GameHitPatternSetting: GameHitPatternSetting{
+						GameHitPattern:    "LineGame_LeftToRight",
+						MaxEliminateTimes: 0,
+					},
+					SpecialFeatureSetting: SpecialFeatureSetting{
+						SpecialFeatureCount: 1,
+						SpecialHitInfo: []SpecialHitInfo{
 							{
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{8, 2, 2, 7, 7, 9, 4, 4, 3, 3, 7, 7, 4, 4, 10, 10, 5, 5, 10, 10, 0, 6, 6, 8, 8, 5, 5, 3, 4, 4, 9, 9, 5, 5, 8, 8, 4, 4, 10, 10, 6, 8, 8, 5, 5, 10, 10, 3, 3, 0, 2, 2, 4, 10, 10, 7, 7, 2, 2, 6, 6, 7, 7, 8, 8, 5, 5, 9, 9, 10, 10, 2, 2, 2, 8, 8, 10, 10, 3, 3, 9, 9, 4, 4, 10, 10, 10, 9, 9, 4, 4, 10, 10, 2, 2, 9, 9, 9, 9, 8}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{9, 9, 7, 7, 7, 8, 10, 10, 5, 5, 7, 7, 3, 3, 8, 8, 5, 5, 10, 10, 0, 7, 7, 4, 4, 7, 7, 7, 4, 4, 9, 9, 2, 2, 10, 10, 7, 7, 9, 9, 8, 8, 5, 5, 6, 6, 5, 5, 9, 9, 3, 3, 8, 8, 7, 7, 9, 4, 4, 10, 10, 0, 8, 8, 5, 5, 6, 6, 10, 10, 3, 3, 9, 9, 8, 8, 4, 4, 10, 10, 9, 9, 5, 5, 9, 9, 5, 5, 8, 8, 10, 10, 0, 7, 7, 4, 4, 9, 9, 6}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{3, 3, 10, 10, 6, 7, 9, 9, 5, 5, 7, 7, 3, 3, 10, 10, 5, 5, 9, 9, 0, 7, 7, 4, 4, 7, 7, 7, 4, 4, 9, 9, 2, 2, 10, 10, 7, 7, 9, 9, 8, 8, 5, 5, 6, 6, 5, 5, 9, 9, 3, 3, 8, 8, 7, 7, 9, 4, 4, 10, 10, 0, 8, 8, 5, 5, 6, 6, 10, 10, 8, 8, 5, 5, 6, 6, 9, 9, 4, 4, 8, 8, 10, 10, 9, 9, 5, 5, 8, 8, 10, 10, 2, 7, 7, 4, 4, 7, 7, 9}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{7, 0, 4, 4, 9, 10, 10, 10, 7, 7, 10, 10, 2, 2, 8, 8, 3, 3, 6, 6, 0, 10, 10, 7, 7, 6, 6, 6, 4, 4, 7, 7, 3, 3, 8, 8, 5, 5, 6, 6, 8, 8, 3, 3, 6, 6, 9, 9, 4, 4, 10, 10, 8, 8, 9, 9, 5, 5, 6, 6, 6, 0, 8, 8, 3, 3, 10, 10, 10, 8, 8, 7, 7, 4, 4, 9, 9, 6, 6, 3, 3, 10, 9, 9, 7, 7, 10, 10, 9, 9, 4, 7, 7, 10, 10, 5, 5, 7, 7, 10}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{9, 9, 6, 6, 6, 5, 0, 9, 6, 6, 10, 10, 6, 6, 7, 7, 10, 10, 5, 5, 0, 8, 8, 6, 6, 8, 8, 8, 4, 4, 9, 9, 5, 5, 9, 9, 10, 10, 8, 8, 7, 7, 5, 5, 4, 4, 8, 8, 10, 10, 2, 2, 3, 3, 0, 4, 4, 6, 6, 9, 9, 0, 8, 8, 5, 5, 9, 9, 10, 10, 4, 4, 6, 6, 3, 3, 10, 10, 8, 8, 9, 9, 10, 10, 5, 5, 0, 9, 9, 4, 4, 10, 10, 7, 7, 2, 2, 6, 6, 6}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{10, 5, 5, 8, 8, 0, 5, 5, 2, 2, 8, 8, 10, 6, 6, 6, 10, 10, 9, 9, 0, 10, 10, 3, 3, 6, 6, 6, 4, 4, 7, 7, 3, 3, 8, 8, 9, 9, 6, 6, 8, 8, 5, 5, 6, 6, 5, 5, 10, 10, 9, 9, 8, 8, 7, 7, 2, 2, 8, 8, 7, 7, 0, 6, 6, 5, 5, 8, 8, 4, 4, 3, 3, 10, 10, 8, 8, 9, 9, 2, 2, 10, 10, 4, 4, 9, 9, 2, 7, 7, 4, 4, 4, 6, 6, 5, 5, 6, 6, 6}, // 数据较长，省略内容
-								},
-							},
-							{
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{8, 2, 2, 7, 7, 9, 4, 4, 3, 3, 7, 7, 4, 4, 10, 10, 5, 5, 10, 10, 0, 6, 6, 8, 8, 5, 5, 3, 4, 4, 9, 9, 5, 5, 8, 8, 4, 4, 10, 10, 6, 8, 8, 5, 5, 10, 10, 3, 3, 0, 2, 2, 4, 10, 10, 7, 7, 2, 2, 6, 6, 7, 7, 8, 8, 5, 5, 9, 9, 10, 10, 2, 2, 2, 8, 8, 10, 10, 3, 3, 9, 9, 4, 4, 10, 10, 10, 9, 9, 4, 4, 10, 10, 2, 2, 9, 9, 9, 9, 8}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{9, 9, 7, 7, 7, 8, 10, 10, 5, 5, 7, 7, 3, 3, 8, 8, 5, 5, 10, 10, 0, 7, 7, 4, 4, 7, 7, 7, 4, 4, 9, 9, 2, 2, 10, 10, 7, 7, 9, 9, 8, 8, 5, 5, 6, 6, 5, 5, 9, 9, 3, 3, 8, 8, 7, 7, 9, 4, 4, 10, 10, 0, 8, 8, 5, 5, 6, 6, 10, 10, 3, 3, 9, 9, 8, 8, 4, 4, 10, 10, 9, 9, 5, 5, 9, 9, 5, 5, 8, 8, 10, 10, 0, 7, 7, 4, 4, 9, 9, 6}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{3, 3, 10, 10, 6, 7, 9, 9, 5, 5, 7, 7, 3, 3, 10, 10, 5, 5, 9, 9, 0, 7, 7, 4, 4, 7, 7, 7, 4, 4, 9, 9, 2, 2, 10, 10, 7, 7, 9, 9, 8, 8, 5, 5, 6, 6, 5, 5, 9, 9, 3, 3, 8, 8, 7, 7, 9, 4, 4, 10, 10, 0, 8, 8, 5, 5, 6, 6, 10, 10, 8, 8, 5, 5, 6, 6, 9, 9, 4, 4, 8, 8, 10, 10, 9, 9, 5, 5, 8, 8, 10, 10, 2, 7, 7, 4, 4, 7, 7, 9}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{7, 0, 4, 4, 9, 10, 10, 10, 7, 7, 10, 10, 2, 2, 8, 8, 3, 3, 6, 6, 0, 10, 10, 7, 7, 6, 6, 6, 4, 4, 7, 7, 3, 3, 8, 8, 5, 5, 6, 6, 8, 8, 3, 3, 6, 6, 9, 9, 4, 4, 10, 10, 8, 8, 9, 9, 5, 5, 6, 6, 6, 0, 8, 8, 3, 3, 10, 10, 10, 8, 8, 7, 7, 4, 4, 9, 9, 6, 6, 3, 3, 10, 9, 9, 7, 7, 10, 10, 9, 9, 4, 7, 7, 10, 10, 5, 5, 7, 7, 10}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{9, 9, 6, 6, 6, 5, 0, 9, 6, 6, 10, 10, 6, 6, 7, 7, 10, 10, 5, 5, 0, 8, 8, 6, 6, 8, 8, 8, 4, 4, 9, 9, 5, 5, 9, 9, 10, 10, 8, 8, 7, 7, 5, 5, 4, 4, 8, 8, 10, 10, 2, 2, 3, 3, 0, 4, 4, 6, 6, 9, 9, 0, 8, 8, 5, 5, 9, 9, 10, 10, 4, 4, 6, 6, 3, 3, 10, 10, 8, 8, 9, 9, 10, 10, 5, 5, 0, 9, 9, 4, 4, 10, 10, 7, 7, 2, 2, 6, 6, 6}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{10, 5, 5, 8, 8, 0, 5, 5, 2, 2, 8, 8, 10, 6, 6, 6, 10, 10, 9, 9, 0, 10, 10, 3, 3, 6, 6, 6, 4, 4, 7, 7, 3, 3, 8, 8, 9, 9, 6, 6, 8, 8, 5, 5, 6, 6, 5, 5, 10, 10, 9, 9, 8, 8, 7, 7, 2, 2, 8, 8, 7, 7, 0, 6, 6, 5, 5, 8, 8, 4, 4, 3, 3, 10, 10, 8, 8, 9, 9, 2, 2, 10, 10, 4, 4, 9, 9, 2, 7, 7, 4, 4, 4, 6, 6, 5, 5, 6, 6, 6}, // 数据较长，省略内容
-								},
+								SpecialHitPattern: "HP_95",
+								TriggerEvent:      "Trigger_01",
+								BasePay:           0,
 							},
 						},
 					},
-					"symbolSetting": map[string]interface{}{
-						"symbolCount":     11,
-						"symbolAttribute": []string{"FreeGame_01", "BonusGame_01", "M1", "M2", "M3", "M4", "A", "K", "Q", "J", "TE"},
-						"payTable": [][]int{
-							{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0, 0, 0, 200, 200, 500, 500, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000},
-							{0, 0, 0, 0, 0, 0, 0, 50, 50, 200, 200, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500},
-							{0, 0, 0, 0, 0, 0, 0, 40, 40, 100, 100, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300},
-							{0, 0, 0, 0, 0, 0, 0, 30, 30, 40, 40, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240},
-							{0, 0, 0, 0, 0, 0, 0, 20, 20, 30, 30, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200},
-							{0, 0, 0, 0, 0, 0, 0, 16, 16, 24, 24, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160},
-							{0, 0, 0, 0, 0, 0, 0, 10, 10, 20, 20, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
-							{0, 0, 0, 0, 0, 0, 0, 8, 8, 18, 18, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80},
-							{0, 0, 0, 0, 0, 0, 0, 5, 5, 15, 15, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40},
-						},
-
-						"mixGroupCount": 0,
+					ProgressSetting: ProgressSetting{
+						TriggerLimitType: "RoundLimit",
+						StepSetting:      StepSetting{DefaultStep: 1, AddStep: 0, MaxStep: 1},
+						StageSetting:     StageSetting{DefaultStage: 1, AddStage: 0, MaxStage: 1},
+						RoundSetting:     RoundSetting{DefaultRound: 1, AddRound: 0, MaxRound: 1},
 					},
-					"lineSetting": map[string]interface{}{
-						"maxBetLine": 0,
-					},
-					"gameHitPatternSetting": map[string]interface{}{
-						"gameHitPattern":    "QuantityGame",
-						"maxEliminateTimes": 0,
-					},
-					"specialFeatureSetting": map[string]interface{}{
-						"specialFeatureCount": 3,
-						"specialHitInfo": []map[string]interface{}{
-							{
-								"specialHitPattern": "HP_109",
-								"triggerEvent":      "Trigger_01",
-								"basePay":           3,
-							},
-							{
-								"specialHitPattern": "HP_110",
-								"triggerEvent":      "Trigger_02",
-								"basePay":           5,
-							},
-							{
-								"specialHitPattern": "HP_124",
-								"triggerEvent":      "Trigger_03",
-								"basePay":           100,
-							},
+					DisplaySetting: DisplaySetting{
+						ReadyHandSetting: ReadyHandSetting{
+							ReadyHandLimitType: "NoReadyHandLimit",
+							ReadyHandCount:     0,
 						},
 					},
-					"progressSetting": map[string]interface{}{
-						"triggerLimitType": "NoLimit",
-						"stepSetting": map[string]interface{}{
-							"defaultStep": 1,
-							"addStep":     0,
-							"maxStep":     1,
+					ExtendSetting: ExtendSetting{
+						InitialChooseTableIndex: 1,
+						RespinProbability:       0.311,
+						TargetScreen: [][]int{
+							{0},
+							{9},
+							{0},
 						},
-						"stageSetting": map[string]interface{}{
-							"defaultStage": 1,
-							"addStage":     0,
-							"maxStage":     1,
-						},
-						"roundSetting": map[string]interface{}{
-							"defaultRound": 1,
-							"addRound":     0,
-							"maxRound":     1,
-						},
-					},
-					"displaySetting": map[string]interface{}{
-						"readyHandSetting": map[string]interface{}{
-							"readyHandLimitType": "NoReadyHandLimit",
-							"readyHandCount":     1,
-							"readyHandType":      []string{"ReadyHand_34"},
-						},
-					},
-
-					"extendSetting": map[string]interface{}{
-						"eliminatedMaxTimes":           999,
-						"scatterC1Id":                  0,
-						"scatterC2Id":                  1,
-						"scatterMultiplier":            []int{2, 3, 5, 8, 10, 12, 15, 18, 20, 25, 35, 50, 100},
-						"scatterMultiplierWeight":      []int{100, 100, 1000, 200, 120, 600, 50, 30, 20, 10, 5, 4, 2},
-						"scatterMultiplierNoHitWeight": []int{200, 250, 300, 500, 350, 200, 150, 100, 80, 30, 20, 4, 2},
-						"triggerRound": map[string]interface{}{
-							"Trigger_01": map[string]interface{}{
-								"defaultRound": 1,
-								"addRound":     0,
-								"maxRound":     1,
-							},
-							"Trigger_02": map[string]interface{}{
-								"defaultRound": 1,
-								"addRound":     0,
-								"maxRound":     1,
-							},
-							"Trigger_03": map[string]interface{}{
-								"defaultRound": 1,
-								"addRound":     0,
-								"maxRound":     1,
-							},
-						},
+						RespinFlag:        false,
+						RespinTableWeight: []int{1},
+						RespinTableChoose: []int{2},
+						RespinColumnIndex: 1,
+						DampInfoRange:     2,
+						EmptySymbolID:     9,
 					},
 				},
-				map[string]interface{}{
-					"gameStateType": "GS_161",
-					"frameSetting": map[string]interface{}{
-						"screenColumn":    6,
-						"screenRow":       5,
-						"wheelUsePattern": "PositionDependence",
+				{
+					GameStateType: "GS_113",
+					FrameSetting: FrameSetting{
+						ScreenColumn:    3,
+						ScreenRow:       1,
+						WheelUsePattern: "Dependent",
 					},
-					"tableSetting": map[string]interface{}{
-						"tableCount":          1,
-						"tableHitProbability": []float64{1}, // 可填 []float64{0.8, 0.2}
-						"wheelData": [][]map[string]interface{}{
-							{
-								map[string]interface{}{
-									"wheelLength": 85,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{8, 2, 2, 7, 7, 9, 4, 4, 3, 3, 7, 7, 4, 4, 10, 10, 5, 5, 10, 10, 0, 6, 6, 8, 8, 5, 5, 3, 4, 4, 9, 9, 5, 5, 8, 8, 4, 4, 10, 10, 6, 8, 8, 5, 5, 10, 10, 3, 3, 0, 2, 2, 4, 10, 10, 7, 7, 2, 2, 6, 6, 7, 7, 8, 8, 5, 5, 9, 9, 10, 10, 2, 2, 2, 8, 8, 10, 10, 3, 3, 9, 9, 4, 4, 10, 10, 10, 9, 9, 4, 4, 10, 10, 2, 2, 9, 9, 9, 9, 8}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 85,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{9, 9, 7, 7, 7, 8, 10, 10, 5, 5, 7, 7, 3, 3, 8, 8, 5, 5, 10, 10, 0, 7, 7, 4, 4, 7, 7, 7, 4, 4, 9, 9, 2, 2, 10, 10, 7, 7, 9, 9, 8, 8, 5, 5, 6, 6, 5, 5, 9, 9, 3, 3, 8, 8, 7, 7, 9, 4, 4, 10, 10, 0, 8, 8, 5, 5, 6, 6, 10, 10, 3, 3, 9, 9, 8, 8, 4, 4, 10, 10, 9, 9, 5, 5, 9, 9, 5, 5, 8, 8, 10, 10, 0, 7, 7, 4, 4, 9, 9, 6}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 85,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{3, 3, 10, 10, 6, 7, 9, 9, 5, 5, 7, 7, 3, 3, 10, 10, 5, 5, 9, 9, 0, 7, 7, 4, 4, 7, 7, 7, 4, 4, 9, 9, 2, 2, 10, 10, 7, 7, 9, 9, 8, 8, 5, 5, 6, 6, 5, 5, 9, 9, 3, 3, 8, 8, 7, 7, 9, 4, 4, 10, 10, 0, 8, 8, 5, 5, 6, 6, 10, 10, 8, 8, 5, 5, 6, 6, 9, 9, 4, 4, 8, 8, 10, 10, 9, 9, 5, 5, 8, 8, 10, 10, 2, 7, 7, 4, 4, 7, 7, 9}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 85,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{7, 0, 4, 4, 9, 10, 10, 10, 7, 7, 10, 10, 2, 2, 8, 8, 3, 3, 6, 6, 0, 10, 10, 7, 7, 6, 6, 6, 4, 4, 7, 7, 3, 3, 8, 8, 5, 5, 6, 6, 8, 8, 3, 3, 6, 6, 9, 9, 4, 4, 10, 10, 8, 8, 9, 9, 5, 5, 6, 6, 6, 0, 8, 8, 3, 3, 10, 10, 10, 8, 8, 7, 7, 4, 4, 9, 9, 6, 6, 3, 3, 10, 9, 9, 7, 7, 10, 10, 9, 9, 4, 7, 7, 10, 10, 5, 5, 7, 7, 10}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 85,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{9, 9, 6, 6, 6, 5, 0, 9, 6, 6, 10, 10, 6, 6, 7, 7, 10, 10, 5, 5, 0, 8, 8, 6, 6, 8, 8, 8, 4, 4, 9, 9, 5, 5, 9, 9, 10, 10, 8, 8, 7, 7, 5, 5, 4, 4, 8, 8, 10, 10, 2, 2, 3, 3, 0, 4, 4, 6, 6, 9, 9, 0, 8, 8, 5, 5, 9, 9, 10, 10, 4, 4, 6, 6, 3, 3, 10, 10, 8, 8, 9, 9, 10, 10, 5, 5, 0, 9, 9, 4, 4, 10, 10, 7, 7, 2, 2, 6, 6, 6}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 85,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{10, 5, 5, 8, 8, 0, 5, 5, 2, 2, 8, 8, 10, 6, 6, 6, 10, 10, 9, 9, 0, 10, 10, 3, 3, 6, 6, 6, 4, 4, 7, 7, 3, 3, 8, 8, 9, 9, 6, 6, 8, 8, 5, 5, 6, 6, 5, 5, 10, 10, 9, 9, 8, 8, 7, 7, 2, 2, 8, 8, 7, 7, 0, 6, 6, 5, 5, 8, 8, 4, 4, 3, 3, 10, 10, 8, 8, 9, 9, 2, 2, 10, 10, 4, 4, 9, 9, 2, 7, 7, 4, 4, 4, 6, 6, 5, 5, 6, 6, 6}, // 数据较长，省略内容
-								},
-							},
-						},
-					},
-					"symbolSetting": map[string]interface{}{
-						"symbolCount":     11,
-						"symbolAttribute": []string{"FreeGame_01", "BonusGame_01", "M1", "M2", "M3", "M4", "A", "K", "Q", "J", "TE"},
-						"payTable": [][]int{
-							{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0, 0, 0, 200, 200, 500, 500, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000},
-							{0, 0, 0, 0, 0, 0, 0, 50, 50, 200, 200, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500},
-							{0, 0, 0, 0, 0, 0, 0, 40, 40, 100, 100, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300},
-							{0, 0, 0, 0, 0, 0, 0, 30, 30, 40, 40, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240},
-							{0, 0, 0, 0, 0, 0, 0, 20, 20, 30, 30, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200},
-							{0, 0, 0, 0, 0, 0, 0, 16, 16, 24, 24, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160},
-							{0, 0, 0, 0, 0, 0, 0, 10, 10, 20, 20, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
-							{0, 0, 0, 0, 0, 0, 0, 8, 8, 18, 18, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80},
-							{0, 0, 0, 0, 0, 0, 0, 5, 5, 15, 15, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40},
-						},
+					TableSetting: TableSetting{
+						TableCount:          4,
+						TableHitProbability: []int{1, 0, 0, 0},
+						WheelData: [][]WheelSlot{
 
-						"mixGroupCount": 0,
-					},
-					"lineSetting": map[string]interface{}{
-						"maxBetLine": 0,
-					},
-					"gameHitPatternSetting": map[string]interface{}{
-						"gameHitPattern":    "QuantityGame",
-						"maxEliminateTimes": 0,
-					},
-					"specialFeatureSetting": map[string]interface{}{
-						"specialFeatureCount": 4,
-						"specialHitInfo": []map[string]interface{}{
 							{
-								"specialHitPattern": "HP_108",
-								"triggerEvent":      "Trigger_01",
-								"basePay":           0,
-							},
-							{
-								"specialHitPattern": "HP_109",
-								"triggerEvent":      "Trigger_02",
-								"basePay":           0,
+								{
+									WheelLength: 1,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0},
+								},
+								{
+									WheelLength: 20,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{3, 4, 5, 6, 7, 8, 4, 5, 6, 7, 8, 5, 6, 7, 8, 6, 7, 8, 7, 8},
+								},
+								{
+									WheelLength: 1,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0},
+								},
 							},
 							{
-								"specialHitPattern": "HP_110",
-								"triggerEvent":      "Trigger_03",
-								"basePay":           0,
+								{
+									WheelLength: 1,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0},
+								},
+								{
+									WheelLength: 25,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{3, 4, 2, 5, 6, 8, 2, 7, 8, 6, 5, 4, 8, 5, 7, 6, 2, 7, 8, 7, 8, 2, 7, 8, 7},
+								},
+								{
+									WheelLength: 1,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0},
+								},
 							},
 							{
-								"specialHitPattern": "HP_124",
-								"triggerEvent":      "Trigger_04",
-								"basePay":           0,
+								{
+									WheelLength: 1,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0},
+								},
+								{
+									WheelLength: 62,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0, 3, 4, 5, 2, 2, 6, 7, 8, 2, 2, 6, 7, 8, 2, 2, 5, 7, 6, 2, 2, 3, 7, 8, 2, 2, 7, 8, 8, 2, 2, 3, 3, 4, 5, 2, 2, 6, 7, 8, 2, 2, 6, 7, 8, 2, 2, 5, 7, 6, 2, 2, 3, 7, 8, 2, 2, 7, 8, 8, 2, 2},
+								},
+								{
+									WheelLength: 1,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0},
+								},
 							},
-						},
-					},
-					"progressSetting": map[string]interface{}{
-						"triggerLimitType": "NoLimit",
-						"stepSetting": map[string]interface{}{
-							"defaultStep": 1,
-							"addStep":     0,
-							"maxStep":     1,
-						},
-						"stageSetting": map[string]interface{}{
-							"defaultStage": 1,
-							"addStage":     0,
-							"maxStage":     1,
-						},
-						"roundSetting": map[string]interface{}{
-							"defaultRound": 10,
-							"addRound":     5,
-							"maxRound":     30,
-						},
-					},
-					"displaySetting": map[string]interface{}{
-						"readyHandSetting": map[string]interface{}{
-							"readyHandLimitType": "NoReadyHandLimit",
-							"readyHandCount":     1,
-							"readyHandType":      []string{"ReadyHand_34"},
-						},
-					},
-
-					"extendSetting": map[string]interface{}{
-						"eliminatedMaxTimes":           999,
-						"scatterC1Id":                  0,
-						"scatterC2Id":                  1,
-						"scatterMultiplier":            []int{2, 3, 5, 8, 10, 12, 15, 18, 20, 25, 35, 50, 100},
-						"scatterMultiplierWeight":      []int{2100, 1500, 800, 200, 100, 50, 20, 10, 8, 5, 3, 2, 1},
-						"scatterMultiplierNoHitWeight": []int{400, 400, 500, 300, 200, 100, 80, 50, 30, 20, 10, 4, 2},
-						"triggerRound": map[string]interface{}{
-							"Trigger_01": map[string]interface{}{
-								"defaultRound": 10,
-								"addRound":     5,
-								"maxRound":     30,
-							},
-							"Trigger_02": map[string]interface{}{
-								"defaultRound": 10,
-								"addRound":     5,
-								"maxRound":     30,
-							},
-							"Trigger_03": map[string]interface{}{
-								"defaultRound": 10,
-								"addRound":     5,
-								"maxRound":     30,
-							},
-							"Trigger_04": map[string]interface{}{
-								"defaultRound": 10,
-								"addRound":     5,
-								"maxRound":     30,
-							},
-						},
-					},
-				},
-				map[string]interface{}{
-					"gameStateType": "GS_161",
-					"frameSetting": map[string]interface{}{
-						"screenColumn":    6,
-						"screenRow":       5,
-						"wheelUsePattern": "PositionDependence",
-					},
-					"tableSetting": map[string]interface{}{
-						"tableCount":          1,
-						"tableHitProbability": []float64{1}, // 可填 []float64{0.8, 0.2}
-						"wheelData": [][]map[string]interface{}{
 							{
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{8, 2, 2, 7, 7, 9, 4, 4, 3, 3, 7, 7, 4, 4, 10, 10, 5, 5, 10, 10, 0, 6, 6, 8, 8, 5, 5, 3, 4, 4, 9, 9, 5, 5, 8, 8, 4, 4, 10, 10, 6, 8, 8, 5, 5, 10, 10, 3, 3, 0, 2, 2, 4, 10, 10, 7, 7, 2, 2, 6, 6, 7, 7, 8, 8, 5, 5, 9, 9, 10, 10, 2, 2, 2, 8, 8, 10, 10, 3, 3, 9, 9, 4, 4, 10, 10, 10, 9, 9, 4, 4, 10, 10, 2, 2, 9, 9, 9, 9, 8}, // 数据较长，省略内容
+								{
+									WheelLength: 1,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0},
 								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{9, 9, 7, 7, 7, 8, 10, 10, 5, 5, 7, 7, 3, 3, 8, 8, 5, 5, 10, 10, 0, 7, 7, 4, 4, 7, 7, 7, 4, 4, 9, 9, 2, 2, 10, 10, 7, 7, 9, 9, 8, 8, 5, 5, 6, 6, 5, 5, 9, 9, 3, 3, 8, 8, 7, 7, 9, 4, 4, 10, 10, 0, 8, 8, 5, 5, 6, 6, 10, 10, 3, 3, 9, 9, 8, 8, 4, 4, 10, 10, 9, 9, 5, 5, 9, 9, 5, 5, 8, 8, 10, 10, 0, 7, 7, 4, 4, 9, 9, 6}, // 数据较长，省略内容
+								{
+									WheelLength: 62,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0, 3, 4, 5, 2, 2, 6, 7, 8, 2, 2, 6, 7, 8, 2, 2, 5, 7, 6, 2, 2, 3, 7, 8, 2, 2, 7, 8, 8, 2, 2, 3, 3, 4, 5, 2, 2, 6, 7, 8, 2, 2, 6, 7, 8, 2, 2, 5, 7, 6, 2, 2, 3, 7, 8, 2, 2, 7, 8, 8, 2, 2},
 								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{3, 3, 10, 10, 6, 7, 9, 9, 5, 5, 7, 7, 3, 3, 10, 10, 5, 5, 9, 9, 0, 7, 7, 4, 4, 7, 7, 7, 4, 4, 9, 9, 2, 2, 10, 10, 7, 7, 9, 9, 8, 8, 5, 5, 6, 6, 5, 5, 9, 9, 3, 3, 8, 8, 7, 7, 9, 4, 4, 10, 10, 0, 8, 8, 5, 5, 6, 6, 10, 10, 8, 8, 5, 5, 6, 6, 9, 9, 4, 4, 8, 8, 10, 10, 9, 9, 5, 5, 8, 8, 10, 10, 2, 7, 7, 4, 4, 7, 7, 9}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{7, 0, 4, 4, 9, 10, 10, 10, 7, 7, 10, 10, 2, 2, 8, 8, 3, 3, 6, 6, 0, 10, 10, 7, 7, 6, 6, 6, 4, 4, 7, 7, 3, 3, 8, 8, 5, 5, 6, 6, 8, 8, 3, 3, 6, 6, 9, 9, 4, 4, 10, 10, 8, 8, 9, 9, 5, 5, 6, 6, 6, 0, 8, 8, 3, 3, 10, 10, 10, 8, 8, 7, 7, 4, 4, 9, 9, 6, 6, 3, 3, 10, 9, 9, 7, 7, 10, 10, 9, 9, 4, 7, 7, 10, 10, 5, 5, 7, 7, 10}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{9, 9, 6, 6, 6, 5, 0, 9, 6, 6, 10, 10, 6, 6, 7, 7, 10, 10, 5, 5, 0, 8, 8, 6, 6, 8, 8, 8, 4, 4, 9, 9, 5, 5, 9, 9, 10, 10, 8, 8, 7, 7, 5, 5, 4, 4, 8, 8, 10, 10, 2, 2, 3, 3, 0, 4, 4, 6, 6, 9, 9, 0, 8, 8, 5, 5, 9, 9, 10, 10, 4, 4, 6, 6, 3, 3, 10, 10, 8, 8, 9, 9, 10, 10, 5, 5, 0, 9, 9, 4, 4, 10, 10, 7, 7, 2, 2, 6, 6, 6}, // 数据较长，省略内容
-								},
-								map[string]interface{}{
-									"wheelLength": 100,
-									"noWinIndex":  []int{0},
-									"wheelData":   []int{10, 5, 5, 8, 8, 0, 5, 5, 2, 2, 8, 8, 10, 6, 6, 6, 10, 10, 9, 9, 0, 10, 10, 3, 3, 6, 6, 6, 4, 4, 7, 7, 3, 3, 8, 8, 9, 9, 6, 6, 8, 8, 5, 5, 6, 6, 5, 5, 10, 10, 9, 9, 8, 8, 7, 7, 2, 2, 8, 8, 7, 7, 0, 6, 6, 5, 5, 8, 8, 4, 4, 3, 3, 10, 10, 8, 8, 9, 9, 2, 2, 10, 10, 4, 4, 9, 9, 2, 7, 7, 4, 4, 4, 6, 6, 5, 5, 6, 6, 6}, // 数据较长，省略内容
+								{
+									WheelLength: 1,
+									NoWinIndex:  []int{0},
+									WheelData:   []int{0},
 								},
 							},
 						},
-						"screenControlSetting": map[string]interface{}{
-							"scatterId":               0,
-							"scatterPatternHitWeight": []int{0, 0, 0, 0, 10000, 77, 5},
-							"scatterTargetColumn":     []int{0, 1, 2, 3, 4, 5},
-							"repeatScatter":           false,
-							"continuous":              false,
+					},
+					SymbolSetting: SymbolSetting{
+						SymbolCount:     10,
+						SymbolAttribute: []string{"Wild_01", "FreeGame_01", "FreeGame_02", "M1", "M2", "M3", "M4", "M5", "M6", "M7"},
+						PayTable: [][]int{
+							{0, 0, 200}, {0, 0, 0}, {0, 0, 0}, {0, 0, 30}, {0, 0, 20},
+							{0, 0, 15}, {0, 0, 8}, {0, 0, 5}, {0, 0, 2}, {0, 0, 0},
+						},
+						MixGroupCount:   0,
+						MixGroupSetting: []any{},
+					},
+					LineSetting: LineSetting{
+						MaxBetLine: 1,
+						LineTable:  [][]int{{0, 0, 0}},
+					},
+					GameHitPatternSetting: GameHitPatternSetting{
+						GameHitPattern:    "LineGame_LeftToRight",
+						MaxEliminateTimes: 0,
+					},
+					SpecialFeatureSetting: SpecialFeatureSetting{
+						SpecialFeatureCount: 1,
+						SpecialHitInfo: []SpecialHitInfo{
+							{SpecialHitPattern: "HP_96", TriggerEvent: "Trigger_01", BasePay: 0},
 						},
 					},
-					"symbolSetting": map[string]interface{}{
-						"symbolCount":     11,
-						"symbolAttribute": []string{"FreeGame_01", "BonusGame_01", "M1", "M2", "M3", "M4", "A", "K", "Q", "J", "TE"},
-						"payTable": [][]int{
-							{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-							{0, 0, 0, 0, 0, 0, 0, 50, 50, 200, 200, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000},
-							{0, 0, 0, 0, 0, 0, 0, 30, 30, 100, 100, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500},
-							{0, 0, 0, 0, 0, 0, 0, 20, 20, 80, 80, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300},
-							{0, 0, 0, 0, 0, 0, 0, 10, 10, 30, 30, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240, 240},
-							{0, 0, 0, 0, 0, 0, 0, 8, 8, 20, 20, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200},
-							{0, 0, 0, 0, 0, 0, 0, 5, 5, 10, 10, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160},
-							{0, 0, 0, 0, 0, 0, 0, 3, 3, 8, 8, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
-							{0, 0, 0, 0, 0, 0, 0, 2, 2, 5, 5, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80},
-							{0, 0, 0, 0, 0, 0, 0, 1, 1, 3, 3, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40},
-						},
-
-						"mixGroupCount": 0,
+					ProgressSetting: ProgressSetting{
+						TriggerLimitType: "RoundLimit",
+						StepSetting:      StepSetting{DefaultStep: 1, AddStep: 0, MaxStep: 1},
+						StageSetting:     StageSetting{DefaultStage: 1, AddStage: 0, MaxStage: 1},
+						RoundSetting:     RoundSetting{DefaultRound: 1, AddRound: 1, MaxRound: 20},
 					},
-					"lineSetting": map[string]interface{}{
-						"maxBetLine": 0,
-					},
-					"gameHitPatternSetting": map[string]interface{}{
-						"gameHitPattern":    "QuantityGame",
-						"maxEliminateTimes": 0,
-					},
-					"specialFeatureSetting": map[string]interface{}{
-						"specialFeatureCount": 3,
-						"specialHitInfo": []map[string]interface{}{
-							{
-								"specialHitPattern": "HP_109",
-								"triggerEvent":      "Trigger_01",
-								"basePay":           3,
-							},
-							{
-								"specialHitPattern": "HP_110",
-								"triggerEvent":      "Trigger_02",
-								"basePay":           5,
-							},
-							{
-								"specialHitPattern": "HP_124",
-								"triggerEvent":      "Trigger_03",
-								"basePay":           100,
-							},
+					DisplaySetting: DisplaySetting{
+						ReadyHandSetting: ReadyHandSetting{
+							ReadyHandLimitType: "NoReadyHandLimit",
+							ReadyHandCount:     0,
 						},
 					},
-					"progressSetting": map[string]interface{}{
-						"triggerLimitType": "NoLimit",
-						"stepSetting": map[string]interface{}{
-							"defaultStep": 1,
-							"addStep":     0,
-							"maxStep":     1,
-						},
-						"stageSetting": map[string]interface{}{
-							"defaultStage": 1,
-							"addStage":     0,
-							"maxStage":     1,
-						},
-						"roundSetting": map[string]interface{}{
-							"defaultRound": 1,
-							"addRound":     0,
-							"maxRound":     1,
-						},
-					},
-					"displaySetting": map[string]interface{}{
-						"readyHandSetting": map[string]interface{}{
-							"readyHandLimitType": "NoReadyHandLimit",
-							"readyHandCount":     1,
-							"readyHandType":      []string{"ReadyHand_34"},
-						},
-					},
-
-					"extendSetting": map[string]interface{}{
-						"eliminatedMaxTimes":           999,
-						"scatterC1Id":                  0,
-						"scatterC2Id":                  1,
-						"scatterMultiplier":            []int{2, 3, 5, 8, 10, 12, 15, 18, 20, 25, 35, 50, 100},
-						"scatterMultiplierWeight":      []int{100, 100, 1000, 200, 120, 600, 50, 30, 20, 10, 5, 4, 2},
-						"scatterMultiplierNoHitWeight": []int{200, 250, 300, 500, 350, 200, 150, 100, 80, 30, 20, 4, 2},
-						"triggerRound": map[string]interface{}{
-							"Trigger_01": map[string]interface{}{
-								"defaultRound": 1,
-								"addRound":     0,
-								"maxRound":     1,
-							},
-							"Trigger_02": map[string]interface{}{
-								"defaultRound": 1,
-								"addRound":     0,
-								"maxRound":     1,
-							},
-							"Trigger_03": map[string]interface{}{
-								"defaultRound": 1,
-								"addRound":     0,
-								"maxRound":     1,
-							},
-						},
+					ExtendSetting: ExtendSetting{
+						DampInfoRange:    2,
+						EmptySymbolID:    9,
+						C2SymbolID:       2,
+						DampInfoSymbol:   []int{0, 3, 4, 5, 6, 7, 8},
+						RoundLimit:       []int{5, 12, 19, 20},
+						ChooseTableIndex: []int{1, 2, 3, 4},
+						FowardNRound:     5,
+						AllRoundOdds:     50,
+						FowardNRoundOdds: 20,
+						OddsHitPattern:   []int{5, 5, 15},
 					},
 				},
 			},
 
-			"doubleGameSetting": map[string]interface{}{
-				"doubleRoundUpperLimit": 5,
-				"doubleBetUpperLimit":   1000000000,
-				"rtp":                   0.96,
-				"tieRate":               0.1,
+			// INSERT_YOUR_REWRITE_HERE
+			DoubleGameSetting: DoubleGameSetting{
+				DoubleRoundUpperLimit: 5,
+				DoubleBetUpperLimit:   1000000000,
+				RTP:                   0.96,
+				TieRate:               0.1,
 			},
-
-			"boardDisplaySetting": map[string]interface{}{
-				"winRankSetting": map[string]interface{}{
-					"BigWin":   10,
-					"MegaWin":  35,
-					"UltraWin": 80,
+			BoardDisplaySetting: BoardDisplaySetting{
+				WinRankSetting: WinRankSetting{
+					BigWin:   30,
+					MegaWin:  75,
+					UltraWin: 200,
 				},
 			},
-			"gameFlowSetting": map[string]interface{}{
-				"conditionTableWithoutBoardEnd": [][]string{
-					{"CD_False", "CD_38", "CD_False", "CD_37", "CD_False"},
-					{"CD_False", "CD_False", "CD_12", "CD_False", "CD_False"},
-					{"CD_False", "CD_False", "CD_False", "CD_False", "CD_False"},
-					{"CD_False", "CD_False", "CD_False", "CD_False", "CD_12"},
-					{"CD_False", "CD_False", "CD_False", "CD_False", "CD_False"},
+			GameFlowSetting: GameFlowSetting{
+				ConditionTableWithoutBoardEnd: [][]string{
+					{"CD_False", "CD_True", "CD_False"},
+					{"CD_False", "CD_False", "CD_01"},
+					{"CD_False", "CD_False", "CD_False"},
 				},
-			},
-
-			"reiterateSpinCriterion": map[string]interface{}{
-				"oddsIntervalSetting": []map[string]interface{}{
-					{"minOdds": 0, "maxOdds": 0.0001, "rejectProb": 0.38},
-					{"minOdds": 0.0001, "maxOdds": 1, "rejectProb": 0.65},
-					{"minOdds": 1, "maxOdds": 2, "rejectProb": 0.99},
-					{"minOdds": 2, "maxOdds": 3, "rejectProb": 0.99},
-					{"minOdds": 3, "maxOdds": 4, "rejectProb": 0.9},
-					{"minOdds": 4, "maxOdds": 5, "rejectProb": 0.6},
-					{"minOdds": 5, "maxOdds": 6, "rejectProb": 0.5},
-					{"minOdds": 6, "maxOdds": 7, "rejectProb": 0.2},
-					{"minOdds": 50, "maxOdds": 60, "rejectProb": 0.1},
-					{"minOdds": 60, "maxOdds": 70, "rejectProb": 0.35},
-					{"minOdds": 70, "maxOdds": 80, "rejectProb": 0.4},
-					{"minOdds": 80, "maxOdds": 90, "rejectProb": 0.4},
-					{"minOdds": 90, "maxOdds": 100, "rejectProb": 0.3},
-					{"minOdds": 100, "maxOdds": 110, "rejectProb": 0.35},
-					{"minOdds": 110, "maxOdds": 120, "rejectProb": 0.3},
-					{"minOdds": 120, "maxOdds": 130, "rejectProb": 0.2},
-					{"minOdds": 130, "maxOdds": 140, "rejectProb": 0.2},
-					{"minOdds": 140, "maxOdds": 150, "rejectProb": 0.2},
-					{"minOdds": 150, "maxOdds": 160, "rejectProb": 0.1},
-				},
-			},
-			"rValue": map[string]interface{}{
-				"NoExtraBet":    28934,
-				"BuyFeature_01": 28898,
 			},
 		},
-		Denoms:          []int{10},
-		DefaultDenomIdx: 0,
-		BuyFeature:      true,
-		BuyFeatureLimit: math.MaxInt32,
 	}
 
 	// 转换为 JSON 字符串
-	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	jsonBytes, err := json.MarshalIndent(resp, "", "  ")
 	if err != nil {
 		panic(err)
 	}
 
+	fmt.Println(string(jsonBytes))
 	return string(jsonBytes)
 }
