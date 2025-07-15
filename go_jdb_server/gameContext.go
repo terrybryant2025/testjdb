@@ -1,349 +1,485 @@
 package main
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
-var GameContextMap = make(map[string]*RicherGameContext)
+const (
+	EAviatorStageZero    = 0
+	EAviatorStageBet     = 1
+	EAviatorStageCashOut = 2
+	EAviatorStageReady   = 3
+)
 
-var seq int64
+const (
+	BET_TIME      = 5 * time.Second
+	CASH_OUT_TIME = 5 * time.Second
+	AWARD_TIME    = 3 * time.Second
+	READY_TIME    = 5 * time.Second
+)
 
-type RicherGameContext struct {
-	//gameService *SpiritService
-
-	// 房间基础信息
-	ClientID         string // 用户conn clientID
-	PlayerInfo       *RicherBettingInfo
-	TableId          int         // 座号
-	mu               sync.Mutex  // 房间锁，防并发
-	RoomTimer        *time.Timer // 操作定时器
-	RoomTimeoutTimes int         // 房间操作超时次数
-
-	// 一个房间下的统计数据
-	RecordId int // 牌局号(每次下一局累加1)
-
-	// 一次下注的游戏更新数据,输或cash out后 置空
-	BetChip      int     // 带入金额（分）
-	BetMulti     int     // 带入倍数
-	AllGold      int     // 订单盈亏最终金额
-	OrderId      string  // 订单ID
-	Intervention bool    // 是否干预
-	MaxWinProfit float64 // 当局最多可赢
-	MaxWinRatio  float64 // 可翻出的最大赔率(<=0 一定要输， >0算出只能赔多少)
-
-	CurrentStatus int // 游戏状态 0游戏待开始   10游戏开始
-	GameStateId   int // 游戏状态id
+type PlayerBetSt struct {
+	BetArea   uint32
+	BetValue  float64
+	IsCashout bool
 }
 
-func NewRicherGameContext(clientID string, tableId int) *RicherGameContext {
-	//playerInfo, ok := RicherUserData.Get(clientID)
-	//if !ok {
-	//	return nil
-	//}
+type AviatorPlayerInfo struct {
+	ChannelId    int64  // 渠道ID
+	Pid          int64  // 玩家ID
+	Nickname     string // 玩家别名，暂时写死了
+	AccountId    string // 玩家信息
+	Currency     string // 货币类型
+	PlayerType   int64  // 玩家类型 1.正常账号  2.试玩账号
+	ProfileImage string
 
-	gameContext := &RicherGameContext{
-		ClientID: clientID,
-		//PlayerInfo: playerInfo,
-		TableId: tableId,
+	Balance    float64 // 余额
+	Rtp        int64   // 当前RTP
+	RtpLevel   int64   // Rtp等级
+	ChannelRtp int64   // 渠道RTP
+	IsOffline  bool    // 是否离线
+	Token      string  // 用户token
+	AutoBet    bool    // 是否自动下注
+
+	BetList []*PlayerBetSt
+
+	conn  *websocket.Conn
+	mutex sync.Mutex
+}
+
+type AviatorGameContext struct {
+	players map[string]*AviatorPlayerInfo
+
+	RecordId          int  // 牌局号(每次下一局累加1)
+	isRunning         bool // 是否已启动
+	Timer             *time.Timer
+	curStateStartTime int64 //当前阶段开始时间
+	CurStage          int32 //当前阶段
+	CurMultiplier     float64
+
+	CashOuts     []CashOut
+	TotalCashOut float64
+	TotalBet     float64
+	IsAwarding   bool
+}
+
+func StructToMap(obj interface{}) (map[string]interface{}, error) {
+	data, err := json.Marshal(obj)
+	if err != nil {
+		return nil, err
 	}
-	// 初始化每局游戏的状态字段
-	//gameContext.nextGame(context.Background())
 
-	GameContextMap[clientID] = gameContext
-	return gameContext
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
-func GetSRicherGameContext(clientID string) *RicherGameContext {
-	if v, ok := GameContextMap[clientID]; ok {
-		return v
+// 将 map[string]interface{} 转换为结构体
+func MapToStruct(data map[string]interface{}, result interface{}) error {
+	// 将 map 转换为 JSON
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("map to json error: %v", err)
+	}
+
+	// 将 JSON 解析到结构体
+	if err := json.Unmarshal(jsonData, result); err != nil {
+		return fmt.Errorf("json to struct error: %v", err)
+	}
+
+	return nil
+}
+
+func NewGameContext() *AviatorGameContext {
+	return &AviatorGameContext{
+		players:           make(map[string]*AviatorPlayerInfo, 0),
+		curStateStartTime: 0,
+		CurStage:          int32(EAviatorStageZero),
+		CurMultiplier:     1.0,
+	}
+}
+func (g *AviatorGameContext) Init() {
+	g.StartTimer(1000*time.Millisecond, g.OnTick)
+}
+
+func (g *AviatorGameContext) NewGameInit() {
+	g.CurStage = EAviatorStageReady
+	g.curStateStartTime = time.Now().UnixMilli()
+	g.TotalBet = 0
+	g.TotalCashOut = 0
+	g.CurMultiplier = 1.0
+	g.CashOuts = make([]CashOut, 0)
+	g.IsAwarding = false
+}
+
+func (g *AviatorGameContext) OnLogin(conn *websocket.Conn, obj map[string]interface{}) {
+	playerInfo := &AviatorPlayerInfo{
+		conn:    conn,
+		Balance: 10000,
+	}
+	g.players[conn.RemoteAddr().String()] = playerInfo
+}
+func (g *AviatorGameContext) OnRecv(conn *websocket.Conn, obj map[string]interface{}) {
+	switch obj["c"] {
+	case "betHandler":
+		var result BetRequest
+		params, _ := obj["p"].(map[string]interface{})
+		if err := MapToStruct(params, &result); err != nil {
+			return
+		}
+		g.C2sBet(conn, &result)
+	case "cashOutHandler":
+		var result CashOutRequest
+		params, _ := obj["p"].(map[string]interface{})
+		if err := MapToStruct(params, &result); err != nil {
+			return
+		}
+		g.C2sCashOut(conn, &result)
+	case "currentBetsInfoHandler":
+		g.CurrentBetsInfo(conn)
+	case "previousRoundInfo":
+	case "getHugeWinsInfo":
+	case "getTopRoundsInfo":
+	case "getTopWinsInfo":
+	case "betHistory":
+	default:
+		fmt.Printf("⚠️ 未知扩展命令: %s\n", obj["c"])
+	}
+}
+
+/*
+func (g *AviatorGameContext) BetHistory(conn *websocket.Conn) {
+
+}
+
+func (g *AviatorGameContext) RoundFairness(conn *websocket.Conn) {
+
+}
+
+func (g *AviatorGameContext) getHugeWinsInfo(c context.Context) {
+
+}
+
+func (g *AviatorGameContext) getTopWinsInfo(c context.Context) {
+
+}
+
+func (g *AviatorGameContext) getTopRoundsInfo(c context.Context) {
+
+}
+
+func (g *AviatorGameContext) PreviousRoundInfo(c context.Context) {
+
+}
+*/
+func (g *AviatorGameContext) C2sBet(conn *websocket.Conn, req *BetRequest) {
+	playerInfo := g.players[conn.RemoteAddr().String()]
+	if playerInfo == nil {
+		return
+	}
+
+	if g.CurStage != EAviatorStageBet {
+		return
+	}
+
+	if req.Bet <= 0 || req.Bet > playerInfo.Balance || req.BetID <= 0 || req.BetID > 2 {
+		return
+	}
+
+	betSt := g.Id2Bet(int32(req.BetID), playerInfo)
+	if betSt != nil {
+		return
+	}
+
+	//扣钱
+	playerInfo.Balance -= req.Bet
+	g.S2cNewBalance(conn, playerInfo.Balance)
+
+	g.TotalBet += req.Bet
+	playerInfo.BetList = append(playerInfo.BetList, &PlayerBetSt{
+		BetArea:  uint32(req.BetID),
+		BetValue: req.Bet,
+	})
+
+	betResponse := &BetResponse{
+		Bet:          req.Bet,
+		BetID:        req.BetID,
+		FreeBet:      req.FreeBet,
+		PlayerID:     playerInfo.AccountId,
+		ProfileImage: playerInfo.ProfileImage,
+		Username:     playerInfo.Nickname,
+	}
+
+	result, _ := StructToMap(betResponse)
+	g.SendToClient(conn, "bet", result)
+}
+
+func (g *AviatorGameContext) Id2Bet(betId int32, playerInfo *AviatorPlayerInfo) *PlayerBetSt {
+	for idx, bet := range playerInfo.BetList {
+		if bet.BetArea == uint32(betId) {
+			return playerInfo.BetList[idx]
+		}
 	}
 	return nil
 }
 
-func (g *RicherGameContext) Spin(c context.Context, denom string, extraBetType string, gameStateId string, playerBet int, playerBetMulti int) (*SpinResultWrapper, error) {
-	g.BetChip = playerBet
-	g.BetMulti = playerBetMulti
-
-	// 获取
-	idx := rand.Intn(5000) + 1 // 0 ~ 4999
-	idx = 459
-	idx = idx - 1 // slice从0开始
-	game := GameList[idx]
-	seq++
-	fmt.Printf("现在命中的是%d", idx+1)
-
-	// 计算金额
-	g.AllGold = g.BetMulti * game.Winnings // 下注倍数 * 游戏记录盈利 = 当局盈利
-
-	// 订单成功，添加返回值
-	spinResultWrapper := SpinResultWrapper{
-		SpinResult: SpinResult{
-			GameStateCount:  0,
-			GameStateResult: make([]GameState, 0),
-			TotalWin:        game.Winnings,
-			BoardDisplayResult: BoardDisplay{
-				WinRankType: "Nothing",
-				ScoreType:   "Nothing",
-				DisplayBet:  g.BetChip, // 下注金额，单位分
-			},
-			GameFlowResult: g.setGameFlowResult(c, game),
-		},
-		TS:      time.Now().UnixMilli(),
-		Balance: 10000, // 用户余额
-		GameSeq: seq,
+func (g *AviatorGameContext) C2sCashOut(conn *websocket.Conn, req *CashOutRequest) {
+	playerInfo := g.players[conn.RemoteAddr().String()]
+	if playerInfo == nil {
+		return
 	}
 
-	state := 0
-	spinResultWrapper.SpinResult.GameStateResult = append(spinResultWrapper.SpinResult.GameStateResult, *g.SetGameStateId0(c))
-	state++
-	spinResultWrapper.SpinResult.GameStateResult = append(spinResultWrapper.SpinResult.GameStateResult, *g.SetGameStatId1(c, game)) // 记录第一次滚轮返回内容
-	if game.Card.FreeGameNum > 0 {
-		spinResultWrapper.SpinResult.GameStateResult = append(spinResultWrapper.SpinResult.GameStateResult, *g.SetGameStatId2(c, game)) // 记录免费游戏返回内容
-	}
-	spinResultWrapper.SpinResult.GameStateResult = append(spinResultWrapper.SpinResult.GameStateResult, *g.SetGameStatId3(c, len(spinResultWrapper.SpinResult.GameStateResult)+1))
-	spinResultWrapper.SpinResult.GameStateCount = len(spinResultWrapper.SpinResult.GameStateResult)
-
-	return &spinResultWrapper, nil
-}
-
-func (g *RicherGameContext) SendSpinResult(card *Card) {
-
-}
-
-func (g *RicherGameContext) SetGameStateId0(c context.Context) *GameState {
-	return &GameState{
-		GameStateId:   StartGameState,
-		CurrentState:  1,
-		GameStateType: StateMap[StartGameState].GameStateType,
-		RoundCount:    0,
-		RoundResult:   nil,
-		StateWin:      0,
-	}
-}
-
-// SetGameStatId1 第一次滚动的结果
-func (g *RicherGameContext) SetGameStatId1(c context.Context, res *RicherSpinResult) *GameState {
-	state := &GameState{
-		GameStateId:   BetState,
-		CurrentState:  2,
-		GameStateType: StateMap[BetState].GameStateType,
-		RoundCount:    0,
-		StateWin:      res.Card.BaseScore * g.BetMulti, // 这个状态下赢取的金额
+	if g.CurStage != EAviatorStageCashOut {
+		return
 	}
 
-	state.RoundResult = g.SetRoundResult(c, res, false)
-	state.RoundCount = len(state.RoundResult)
-	return state
-}
-
-// SetGameStatId2 免费游戏滚动的结果
-func (g *RicherGameContext) SetGameStatId2(c context.Context, res *RicherSpinResult) *GameState {
-	state := &GameState{
-		GameStateId:   FreeGameState,
-		CurrentState:  3,
-		GameStateType: StateMap[FreeGameState].GameStateType,
-		RoundCount:    0,
-		StateWin:      res.Card.FreeGameTotalScore * g.BetMulti,
+	betSt := g.Id2Bet(int32(req.BetID), playerInfo)
+	if betSt == nil {
+		return
 	}
 
-	state.RoundResult = g.SetRoundResult(c, res, true)
-	state.RoundCount = len(state.RoundResult)
-	return state
-}
-
-func (g *RicherGameContext) SetGameStatId3(c context.Context, currentState int) *GameState {
-	state := &GameState{
-		GameStateId:   EndState,
-		CurrentState:  currentState,
-		GameStateType: StateMap[EndState].GameStateType,
-		RoundCount:    0,
-		StateWin:      0,
+	if betSt.IsCashout {
+		return
 	}
-	return state
+	CurMultiplier := g.CurMultiplier
+
+	//加钱
+	playerInfo.Balance += betSt.BetValue * CurMultiplier
+	g.S2cNewBalance(conn, playerInfo.Balance)
+
+	betSt.IsCashout = true
+	g.TotalCashOut += betSt.BetValue * CurMultiplier
+	g.CashOuts = append(g.CashOuts, CashOut{
+		BetID:      req.BetID,
+		Multiplier: CurMultiplier,
+		PlayerID:   playerInfo.AccountId,
+		WinAmount:  betSt.BetValue * CurMultiplier,
+	})
+
+	cashOut := &CashOut{
+		PlayerID:   playerInfo.AccountId,
+		BetID:      req.BetID,
+		Multiplier: g.CurMultiplier,
+	}
+
+	result, _ := StructToMap(cashOut)
+	g.SendToClient(conn, "cashOut", result)
+
+}
+func (g *AviatorGameContext) CurrentBetsInfo(conn *websocket.Conn) {
+	currentBetsInfo := &CurrentBetsInfo{
+		BetsCount:              88,
+		OpenBetsCount:          56,
+		Code:                   200,
+		CashOuts:               []CashOut{},
+		Bets:                   []Bet{},
+		ActivePlayersCount:     333,
+		TopPlayerProfileImages: []string{},
+		TotalCashOut:           666.5,
+	}
+
+	currentBetsInfo.CashOuts = append(currentBetsInfo.CashOuts, g.CashOuts...)
+
+	result, _ := StructToMap(currentBetsInfo)
+	g.SendToClient(conn, "currentBetsInfo", result)
 }
 
-func (g *RicherGameContext) SetRoundResult(c context.Context, res *RicherSpinResult, isFreeGame bool) []RoundResult {
-	gameCard := make([]*Card, 0)
-	var totalRound int
-	if isFreeGame {
-		gameCard = res.Card.FreeGameCard
-		totalRound = res.Card.FreeGameNum
+func (g *AviatorGameContext) S2cUpdateCurrentCashOuts() {
+	ntf := &UpdateCurrentCashOuts{
+		Code:                   200,
+		TotalCashOut:           g.TotalCashOut,
+		OpenBetsCount:          int(g.TotalBet),
+		ActivePlayersCount:     0,
+		TopPlayerProfileImages: []string{},
+		CashOuts:               []CashOut{},
+	}
+
+	ntf.CashOuts = append(ntf.CashOuts, g.CashOuts...)
+	result, _ := StructToMap(ntf)
+	g.SendToAllClients("updateCurrentCashOuts", result)
+}
+
+func (g *AviatorGameContext) S2cUpdateCurrentBets() {
+	ntf := &UpdateCurrentBets{
+		BetsCount:              33,
+		Code:                   200,
+		ActivePlayersCount:     100,
+		Bets:                   []Bet{},
+		TopPlayerProfileImages: []string{},
+	}
+	result, _ := StructToMap(ntf)
+	g.SendToAllClients("updateCurrentBets", result)
+}
+
+func (g *AviatorGameContext) S2cRoundChartInfo() {
+	ntf := &RoundChartInfo{
+		Code:          200,
+		MaxMultiplier: g.CurMultiplier,
+		RoundId:       g.RecordId,
+	}
+	result, _ := StructToMap(ntf)
+	g.SendToAllClients("roundChartInfo", result)
+}
+
+func (g *AviatorGameContext) S2cUpdateX() {
+	ntf := &UpdateX{
+		Code: 200,
+		X:    g.CurMultiplier,
+	}
+	result, _ := StructToMap(ntf)
+	g.SendToAllClients("x", result)
+}
+func (g *AviatorGameContext) S2cOnlinePlayers() {
+	onlinePlayers := 0
+	for _, player := range g.players {
+		if !player.IsOffline {
+			onlinePlayers++
+		}
+	}
+	ntf := &OnlinePlayers{
+		Code:          200,
+		OnlinePlayers: onlinePlayers,
+	}
+	result, _ := StructToMap(ntf)
+	g.SendToAllClients("onlinePlayers", result)
+}
+
+func (g *AviatorGameContext) S2cChangeState(newStatus int32) {
+	ntf := &ChangeState{
+		Code:       200,
+		NewStateID: int(newStatus),
+		RoundID:    int64(g.RecordId),
+	}
+
+	if newStatus == EAviatorStageBet {
+		ntf.ServerTime = time.Now().UnixMilli()
+		ntf.BetStateEndTime = ntf.ServerTime + BET_TIME.Milliseconds()
+	}
+	result, _ := StructToMap(ntf)
+	g.SendToAllClients("changeState", result)
+}
+
+func (g *AviatorGameContext) S2cNewBalance(conn *websocket.Conn, balance float64) {
+	ntf := &NewBalance{
+		Code:       200,
+		NewBalance: balance,
+	}
+
+	result, _ := StructToMap(ntf)
+	g.SendToClient(conn, "newBalance", result)
+}
+
+func (g *AviatorGameContext) SendToAllClients(cmd string, data map[string]interface{}) {
+	p := map[string]interface{}{
+		"p": data,
+		"c": cmd,
+	}
+
+	packet := BuildSFSMessage(13, 1, p)
+	for _, player := range g.players {
+		if player.IsOffline {
+			continue
+		}
+
+		player.mutex.Lock()
+		defer player.mutex.Unlock()
+		player.conn.WriteMessage(websocket.BinaryMessage, packet)
+	}
+}
+
+func (g *AviatorGameContext) SendToClient(conn *websocket.Conn, cmd string, data map[string]interface{}) {
+	p := map[string]interface{}{
+		"p": data,
+		"c": cmd,
+	}
+
+	packet := BuildSFSMessage(13, 1, p)
+	conn.WriteMessage(websocket.BinaryMessage, packet)
+}
+
+func (g *AviatorGameContext) UpdateStatus(newStatus int32, oldStatus int32) {
+	println("UpdateStatus status=", newStatus)
+
+	if newStatus == EAviatorStageReady {
+		g.NewGameInit()
 	} else {
-		gameCard = append(gameCard, res.Card)
-		totalRound = 1
+		g.CurStage = newStatus
+		g.curStateStartTime = time.Now().UnixMilli()
 	}
 
-	data := make([]RoundResult, 0, len(gameCard))
-	for idx, card := range gameCard {
-		var roundRes = RoundResult{
-			RoundWin: card.BaseScore * g.BetMulti,
-			ScreenResult: ScreenResult{
-				TableIndex:   0,
-				ScreenSymbol: convertCardValMatrix(res.Card.Rolls),
-				DampInfo:     g.setDampInfo(c),
-			},
-			ProgressResult: ProgressResult{
-				MaxTriggerFlag: false,
-				StepInfo: StepInfo{
-					CurrentStep: 1,
-					AddStep:     0,
-					TotalStep:   1,
-				},
-				StageInfo: StageInfo{
-					CurrentStage: 1,
-					TotalStage:   1,
-					AddStage:     0,
-				},
-				RoundInfo: RoundInfo{
-					CurrentRound: idx + 1,
-					TotalRound:   totalRound,
-					AddRound:     0,
-				},
-			},
-			DisplayResult: DisplayResult{
-				AccumulateWinResult: AccumulateWinResult{
-					BeforeSpinFirstStateOnlyBasePayAccWin: 0,
-					AfterSpinFirstStateOnlyBasePayAccWin:  0,
-					BeforeSpinAccWin:                      0,
-					AfterSpinAccWin:                       0,
-				},
-				ReadyHandResult: ReadyHandResult{
-					DisplayMethod: [][]bool{
-						{false},
-						{false},
-						{false},
-						{false},
-						{false},
-					},
-				},
-				BoardDisplayResult: BoardDisplay{
-					WinRankType: "Nothing",
-					ScoreType:   "",
-					DisplayBet:  0, // 好像一直都是0
-				},
-			},
-			GameResult: GameResult{
-				PlayerWin:    card.BaseScore * g.BetMulti, // 一次滚动 赢取的金额
-				WayWinResult: g.setWayWinResult(c, card),
-				GameWinType:  "WayGame",
-			},
-		}
-
-		if isFreeGame {
-			roundRes.ExtendGameState = &ExtendGameState{
-				ScreenScatterTwoPositionList: nil,
-				ScreenMultiplier:             nil,
-				RoundMultiplier:              0,
-				ScreenWinsInfo:               nil,
-				ExtendWin:                    0,
-				GameDescriptor: GameDescriptor{
-					Version: 1,
-					Component: [][]TypVal{
-						{
-							TypVal{
-								Type:  "label",
-								Value: "odds",
-							},
-							TypVal{
-								Type:  "label",
-								Value: "colon",
-							},
-							TypVal{
-								Type:  "text",
-								Value: fmt.Sprintf("%d", idx+1),
-							},
-						},
-					},
-				},
-			}
-		} else if card.FreeGameNum > 0 {
-			roundRes.SpecialFeatureResult = &SpecialFeatureResult{
-				SpecialHitPattern:    "HP_88",
-				TriggerEvent:         "Trigger_01",
-				SpecialScreenHitData: card.CardScreenHit[Treasure],
-				SpecialScreenWin:     0,
-			}
-			roundRes.DisplayResult.ReadyHandResult.DisplayMethod[5][0] = true // 不知道指的什么，看的返回值是这个
-		}
-
-		data = append(data, roundRes)
-	}
-
-	return data
+	g.S2cChangeState(newStatus)
 }
 
-func (g *RicherGameContext) setWayWinResult(c context.Context, card *Card) []*WayWinData {
-	if card.BaseScore <= 0 {
-		return make([]*WayWinData, 0)
-	}
+func (g *AviatorGameContext) OnTick() {
+	now := time.Now().UnixMilli()
+	println("onTick ", now, g.curStateStartTime, now-g.curStateStartTime, BET_TIME.Milliseconds(), "stage=", g.CurStage)
 
-	data := make([]*WayWinData, 0, len(card.CardSerialRollCount))
-
-	for cardVal, rollCount := range card.CardSerialRollCount {
-		if rollCount >= 3 { // 连续大于3轮才能获得积分
-			if cardVal == Treasure && rollCount != 5 {
-				continue
+	switch g.CurStage {
+	case EAviatorStageBet:
+		{
+			if now-g.curStateStartTime > BET_TIME.Milliseconds() {
+				g.UpdateStatus(EAviatorStageCashOut, EAviatorStageBet)
+			} else {
+				g.S2cUpdateCurrentBets()
 			}
-
-			combTotal := 1 // 多少种组合
-			for _, count := range card.CardCounts[cardVal] {
-				if count > 0 {
-					combTotal *= count
+		}
+	case EAviatorStageCashOut:
+		{
+			if now-g.curStateStartTime > CASH_OUT_TIME.Milliseconds()+AWARD_TIME.Microseconds() {
+				g.UpdateStatus(EAviatorStageReady, EAviatorStageCashOut)
+			} else if now-g.curStateStartTime > CASH_OUT_TIME.Milliseconds() {
+				if !g.IsAwarding {
+					g.IsAwarding = true
+					g.S2cRoundChartInfo()
 				}
+			} else {
+				g.CurMultiplier = g.CurMultiplier + 0.1
+				g.S2cUpdateCurrentCashOuts()
+				g.S2cUpdateX()
 			}
-
-			wwr := WayWinData{
-				SymbolId:      int(cardVal),
-				HitDirection:  "LeftToRight",
-				HitNumber:     rollCount,
-				HitCount:      combTotal,
-				HitOdds:       oddsMap[cardVal][rollCount],
-				SymbolWin:     oddsMap[cardVal][rollCount] * combTotal * g.BetMulti,
-				ScreenHitData: card.CardScreenHit[cardVal],
+		}
+	case EAviatorStageReady:
+		{
+			if now-g.curStateStartTime > READY_TIME.Milliseconds() {
+				g.UpdateStatus(EAviatorStageBet, EAviatorStageReady)
 			}
-			data = append(data, &wwr)
 		}
 	}
-	return data
+	g.S2cOnlinePlayers()
 }
 
-func (g *RicherGameContext) setGameFlowResult(c context.Context, game *RicherSpinResult) GameFlowResult {
-	res := GameFlowResult{
-		IsBoardEndFlag:       true,
-		CurrentSystemStateId: 3,
+// StartTimer 启动定时器
+func (g *AviatorGameContext) StartTimer(interval time.Duration, callback func()) {
+	if g.IsRunning() {
+		return // 已经启动，直接返回
 	}
-
-	res.SystemStateIdOptions = []int{0}
-	if game.Winnings > 0 {
-		res.SystemStateIdOptions = append(res.SystemStateIdOptions, 997)
-	}
-
-	return res
-}
-
-func (g *RicherGameContext) setDampInfo(c context.Context) [][]int {
-	data := [][]int{
-		{7, 4},
-		{7, 7},
-		{5, 4},
-		{8, 2},
-		{8, 7},
-	}
-
-	return data
-}
-
-func convertCardValMatrix(val [5][3]CardVal) [][]int {
-	result := make([][]int, len(val))
-	for i := range val {
-		result[i] = make([]int, len(val[i]))
-		for j := range val[i] {
-			result[i][j] = int(val[i][j])
+	g.isRunning = true
+	g.Timer = time.NewTimer(interval)
+	go func() {
+		for range g.Timer.C {
+			callback()
+			g.Timer.Reset(interval)
 		}
+	}()
+}
+
+// StopTimer 停止定时器
+func (g *AviatorGameContext) StopTimer() {
+	if g.Timer != nil {
+		g.Timer.Stop()
+		g.isRunning = false
 	}
-	return result
+}
+
+// IsRunning 获取运行状态
+func (g *AviatorGameContext) IsRunning() bool {
+	return g.isRunning
 }
