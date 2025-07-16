@@ -1,6 +1,7 @@
 package main
 
 type CashOut struct {
+	Code       int     `json:"code"`
 	PlayerID   string  `json:"player_id"`
 	WinAmount  float64 `json:"winAmount"`
 	Multiplier float64 `json:"multiplier"`
@@ -64,6 +65,21 @@ type NewBalance struct {
 type CashOutRequest struct {
 	BetID            int   `json:"betId"`
 	CurrentTimestamp int64 `json:"currentTimestamp"`
+}
+
+type CashOutItem struct {
+	BetAmount           float64 `json:"betAmount"`
+	WinAmount           float64 `json:"winAmount"`
+	PlayerID            string  `json:"player_id"`
+	BetID               int     `json:"betId"`
+	IsMaxWinAutoCashOut bool    `json:"isMaxWinAutoCashOut"`
+}
+
+type CashOutResponse struct {
+	Code        int           `json:"code"`
+	Cashouts    []CashOutItem `json:"cashouts"`
+	Multiplier  float64       `json:"multiplier"`
+	OperatorKey string        `json:"operatorKey"`
 }
 
 type RoundChartInfo struct {
@@ -273,4 +289,10 @@ type UpdateCurrentBets struct {
 type UpdateX struct {
 	Code int     `json:"code"`
 	X    float64 `json:"x"`
+}
+
+type UpdateCrashX struct {
+	Code   int     `json:"code"`
+	CrashX float64 `json:"crashX"`
+	X      float64 `json:"x"`
 }

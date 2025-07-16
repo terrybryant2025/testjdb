@@ -852,7 +852,6 @@ func BuildSFSMessage(a int16, c interface{}, p map[string]interface{}) []byte {
 	// 	fmt.Println("📤 SFSMessage (a == 13):")
 	// 	fmt.Println(final.Bytes())
 	// }
-	fmt.Println("发送消息", final.Len())
 
 	return final.Bytes()
 }
@@ -1240,6 +1239,8 @@ func handleCallExtension(conn *websocket.Conn, obj map[string]interface{}) {
 	switch cmd {
 	case "GEN_HEARTBEAT":
 		handleGENHeartbeat(conn, params)
+	case "PING_REQUEST":
+		//handlePingRequest(conn, params)
 	default:
 		g.OnRecv(conn, obj)
 		//fmt.Printf("⚠️ 未知扩展命令: %s\n", cmd)
@@ -1257,24 +1258,11 @@ func handleGENHeartbeat(conn *websocket.Conn, obj map[string]interface{}) {
 	conn.WriteMessage(websocket.BinaryMessage, packet)
 }
 
-func handleBet(conn *websocket.Conn, obj map[string]interface{}) {
-	// bet, _ := params["bet"].(float64)
-	// clientSeed, _ := params["clientSeed"].(string)
-	// mines, _ := params["minesAmount"].(float64) // 若为 int，则改为 int 类型判断
+func handlePingRequest(conn *websocket.Conn, obj map[string]interface{}) {
 	p := map[string]interface{}{
-		"p": map[string]interface{}{
-			"code":       200,
-			"winAmount":  0.3,
-			"balance":    2999.7,
-			"multiplier": 1.0,
-			"nextTile":   1.1,
-			"currency":   "USD",
-			"win":        false,
-			"cashout":    0.3,
-		},
-		"c": "betResponse",
+		"p": map[string]interface{}{},
+		"c": "PING_RESPONSE",
 	}
-
 	packet := BuildSFSMessage(13, 1, p)
 	conn.WriteMessage(websocket.BinaryMessage, packet)
 }

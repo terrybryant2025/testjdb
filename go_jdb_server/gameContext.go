@@ -13,18 +13,16 @@ const (
 	EAviatorStageZero    = 0
 	EAviatorStageBet     = 1
 	EAviatorStageCashOut = 2
-	EAviatorStageReady   = 3
 )
 
 const (
 	BET_TIME      = 5 * time.Second
 	CASH_OUT_TIME = 5 * time.Second
 	AWARD_TIME    = 3 * time.Second
-	READY_TIME    = 5 * time.Second
 )
 
 type PlayerBetSt struct {
-	BetArea   uint32
+	BetArea   int32
 	BetValue  float64
 	IsCashout bool
 }
@@ -66,7 +64,6 @@ type AviatorGameContext struct {
 	LastBets     []Bet
 	TotalCashOut float64
 	TotalBet     float64
-	IsAwarding   bool
 }
 
 func StructToMap(obj interface{}) (map[string]interface{}, error) {
@@ -108,24 +105,28 @@ func NewGameContext() *AviatorGameContext {
 	}
 }
 func (g *AviatorGameContext) Init() {
-	g.StartTimer(1000*time.Millisecond, g.OnTick)
+	g.StartTimer(500*time.Millisecond, g.OnTick)
 }
 
 func (g *AviatorGameContext) NewGameInit() {
-	g.CurStage = EAviatorStageReady
+	g.CurStage = EAviatorStageZero
 	g.curStateStartTime = time.Now().UnixMilli()
 	g.TotalBet = 0
 	g.TotalCashOut = 0
 	g.CurMultiplier = 1.0
 	g.CashOuts = make([]CashOut, 0)
 	g.LastBets = make([]Bet, 0)
-	g.IsAwarding = false
+	g.RecordId = g.RecordId + 1
 }
 
 func (g *AviatorGameContext) OnLogin(conn *websocket.Conn, obj map[string]interface{}) {
 	playerInfo := &AviatorPlayerInfo{
-		conn:    conn,
-		Balance: 10000,
+		conn:      conn,
+		Balance:   10000,
+		BetList:   make([]*PlayerBetSt, 0),
+		IsOffline: false,
+		AccountId: "33687&&demo",
+		Nickname:  "demo_71815",
 	}
 	g.players[conn.RemoteAddr().String()] = playerInfo
 }
@@ -146,7 +147,7 @@ func (g *AviatorGameContext) OnRecv(conn *websocket.Conn, obj map[string]interfa
 		}
 		g.C2sCashOut(conn, &result)
 	case "currentBetsInfoHandler":
-		g.CurrentBetsInfo(conn)
+		g.C2sCurrentBetsInfo(conn)
 	case "previousRoundInfo":
 	case "getHugeWinsInfo":
 	case "getTopRoundsInfo":
@@ -203,15 +204,17 @@ func (g *AviatorGameContext) C2sBet(conn *websocket.Conn, req *BetRequest) {
 
 	//扣钱
 	playerInfo.Balance -= req.Bet
-	g.S2cNewBalance(conn, playerInfo.Balance)
+	g.S2cNewBalance(playerInfo, playerInfo.Balance)
 
 	g.TotalBet += req.Bet
 	playerInfo.BetList = append(playerInfo.BetList, &PlayerBetSt{
-		BetArea:  uint32(req.BetID),
-		BetValue: req.Bet,
+		BetArea:   int32(req.BetID),
+		BetValue:  req.Bet,
+		IsCashout: false,
 	})
 
 	betResponse := &BetResponse{
+		Code:         200,
 		Bet:          req.Bet,
 		BetID:        req.BetID,
 		FreeBet:      req.FreeBet,
@@ -233,16 +236,24 @@ func (g *AviatorGameContext) C2sBet(conn *websocket.Conn, req *BetRequest) {
 	}
 
 	result, _ := StructToMap(betResponse)
-	g.SendToClient(conn, "bet", result)
+	g.SendToClient(playerInfo, "bet", result)
 }
 
 func (g *AviatorGameContext) Id2Bet(betId int32, playerInfo *AviatorPlayerInfo) *PlayerBetSt {
 	for idx, bet := range playerInfo.BetList {
-		if bet.BetArea == uint32(betId) {
+		if bet.BetArea == betId {
 			return playerInfo.BetList[idx]
 		}
 	}
 	return nil
+}
+
+func (g *AviatorGameContext) SetCashOut(betId int32, playerInfo *AviatorPlayerInfo) {
+	for idx, bet := range playerInfo.BetList {
+		if bet.BetArea == betId {
+			playerInfo.BetList[idx].IsCashout = true
+		}
+	}
 }
 
 func (g *AviatorGameContext) C2sCashOut(conn *websocket.Conn, req *CashOutRequest) {
@@ -267,9 +278,9 @@ func (g *AviatorGameContext) C2sCashOut(conn *websocket.Conn, req *CashOutReques
 
 	//加钱
 	playerInfo.Balance += betSt.BetValue * CurMultiplier
-	g.S2cNewBalance(conn, playerInfo.Balance)
+	g.S2cNewBalance(playerInfo, playerInfo.Balance)
 
-	betSt.IsCashout = true
+	g.SetCashOut(int32(req.BetID), playerInfo)
 	g.TotalCashOut += betSt.BetValue * CurMultiplier
 	g.CashOuts = append(g.CashOuts, CashOut{
 		BetID:      req.BetID,
@@ -278,33 +289,50 @@ func (g *AviatorGameContext) C2sCashOut(conn *websocket.Conn, req *CashOutReques
 		WinAmount:  betSt.BetValue * CurMultiplier,
 	})
 
-	cashOut := &CashOut{
-		PlayerID:   playerInfo.AccountId,
-		BetID:      req.BetID,
-		Multiplier: g.CurMultiplier,
+	cashOutResponse := CashOutResponse{
+		Code:        200,
+		Multiplier:  CurMultiplier,
+		Cashouts:    make([]CashOutItem, 0),
+		OperatorKey: "demo",
 	}
 
-	result, _ := StructToMap(cashOut)
-	g.SendToClient(conn, "cashOut", result)
+	cashOutResponse.Cashouts = append(cashOutResponse.Cashouts, CashOutItem{
+		BetAmount:           betSt.BetValue,
+		BetID:               req.BetID,
+		PlayerID:            playerInfo.AccountId,
+		WinAmount:           betSt.BetValue * CurMultiplier,
+		IsMaxWinAutoCashOut: false,
+	})
+
+	result, _ := StructToMap(cashOutResponse)
+	g.SendToClient(playerInfo, "cashOut", result)
 
 }
-func (g *AviatorGameContext) CurrentBetsInfo(conn *websocket.Conn) {
+
+func (g *AviatorGameContext) C2sCurrentBetsInfo(conn *websocket.Conn) {
+	playerInfo := g.players[conn.RemoteAddr().String()]
+	if playerInfo == nil {
+		return
+	}
+	g.CurrentBetsInfo(playerInfo)
+}
+func (g *AviatorGameContext) CurrentBetsInfo(player *AviatorPlayerInfo) {
 	currentBetsInfo := &CurrentBetsInfo{
-		BetsCount:              88,
-		OpenBetsCount:          56,
+		BetsCount:              g.BetsCount(),
+		OpenBetsCount:          g.OpenBetsCount(),
 		Code:                   200,
 		CashOuts:               []CashOut{},
 		Bets:                   []Bet{},
-		ActivePlayersCount:     333,
+		ActivePlayersCount:     g.OnlinePlayers(),
 		TopPlayerProfileImages: []string{},
-		TotalCashOut:           666.5,
+		TotalCashOut:           g.TotalCashOut,
 	}
 
 	currentBetsInfo.CashOuts = append(currentBetsInfo.CashOuts, g.CashOuts...)
 	currentBetsInfo.Bets = append(currentBetsInfo.Bets, g.LastBets...)
 
 	result, _ := StructToMap(currentBetsInfo)
-	g.SendToClient(conn, "currentBetsInfo", result)
+	g.SendToClient(player, "currentBetsInfo", result)
 }
 
 func (g *AviatorGameContext) S2cUpdateCurrentCashOuts() {
@@ -312,7 +340,7 @@ func (g *AviatorGameContext) S2cUpdateCurrentCashOuts() {
 		Code:                   200,
 		TotalCashOut:           g.TotalCashOut,
 		OpenBetsCount:          int(g.TotalBet),
-		ActivePlayersCount:     0,
+		ActivePlayersCount:     g.OnlinePlayers(),
 		TopPlayerProfileImages: []string{},
 		CashOuts:               []CashOut{},
 	}
@@ -324,9 +352,9 @@ func (g *AviatorGameContext) S2cUpdateCurrentCashOuts() {
 
 func (g *AviatorGameContext) S2cUpdateCurrentBets() {
 	ntf := &UpdateCurrentBets{
-		BetsCount:              33,
+		BetsCount:              g.BetsCount(),
 		Code:                   200,
-		ActivePlayersCount:     100,
+		ActivePlayersCount:     g.OnlinePlayers(),
 		Bets:                   []Bet{},
 		TopPlayerProfileImages: []string{},
 	}
@@ -354,13 +382,51 @@ func (g *AviatorGameContext) S2cUpdateX() {
 	result, _ := StructToMap(ntf)
 	g.SendToAllClients("x", result)
 }
-func (g *AviatorGameContext) S2cOnlinePlayers() {
+
+func (g *AviatorGameContext) S2cUpdateCrashX() {
+	ntf := &UpdateCrashX{
+		Code:   200,
+		X:      g.CurMultiplier,
+		CrashX: g.CurMultiplier,
+	}
+	result, _ := StructToMap(ntf)
+	g.SendToAllClients("x", result)
+}
+
+func (g *AviatorGameContext) OnlinePlayers() int {
 	onlinePlayers := 0
 	for _, player := range g.players {
 		if !player.IsOffline {
 			onlinePlayers++
 		}
 	}
+	return onlinePlayers
+}
+
+func (g *AviatorGameContext) OpenBetsCount() int {
+	openBetsCount := 0
+	for _, player := range g.players {
+		for _, bet := range player.BetList {
+			if bet.IsCashout {
+				continue
+			}
+			openBetsCount++
+		}
+	}
+	return openBetsCount
+}
+func (g *AviatorGameContext) BetsCount() int {
+	betsCount := 0
+	for _, player := range g.players {
+		if len(player.BetList) > 0 {
+			betsCount += len(player.BetList)
+		}
+	}
+	return betsCount
+}
+
+func (g *AviatorGameContext) S2cOnlinePlayers() {
+	onlinePlayers := g.OnlinePlayers()
 	ntf := &OnlinePlayers{
 		Code:          200,
 		OnlinePlayers: onlinePlayers,
@@ -374,6 +440,7 @@ func (g *AviatorGameContext) S2cChangeState(newStatus int32) {
 		Code:       200,
 		NewStateID: int(newStatus),
 		RoundID:    int64(g.RecordId),
+		TimeLeft:   5000,
 	}
 
 	if newStatus == EAviatorStageBet {
@@ -384,14 +451,14 @@ func (g *AviatorGameContext) S2cChangeState(newStatus int32) {
 	g.SendToAllClients("changeState", result)
 }
 
-func (g *AviatorGameContext) S2cNewBalance(conn *websocket.Conn, balance float64) {
+func (g *AviatorGameContext) S2cNewBalance(player *AviatorPlayerInfo, balance float64) {
 	ntf := &NewBalance{
 		Code:       200,
 		NewBalance: balance,
 	}
 
 	result, _ := StructToMap(ntf)
-	g.SendToClient(conn, "newBalance", result)
+	g.SendToClient(player, "newBalance", result)
 }
 
 func (g *AviatorGameContext) SendToAllClients(cmd string, data map[string]interface{}) {
@@ -412,65 +479,76 @@ func (g *AviatorGameContext) SendToAllClients(cmd string, data map[string]interf
 	}
 }
 
-func (g *AviatorGameContext) SendToClient(conn *websocket.Conn, cmd string, data map[string]interface{}) {
+func (g *AviatorGameContext) SendToClient(player *AviatorPlayerInfo, cmd string, data map[string]interface{}) {
 	p := map[string]interface{}{
 		"p": data,
 		"c": cmd,
 	}
 
 	packet := BuildSFSMessage(13, 1, p)
-	conn.WriteMessage(websocket.BinaryMessage, packet)
+
+	player.mutex.Lock()
+	defer player.mutex.Unlock()
+	player.conn.WriteMessage(websocket.BinaryMessage, packet)
+
+	println("SendToClient=", cmd, data)
 }
 
-func (g *AviatorGameContext) UpdateStatus(newStatus int32, oldStatus int32) {
+func (g *AviatorGameContext) UpdateStatus(newStatus int32) {
 	println("UpdateStatus status=", newStatus)
 
-	if newStatus == EAviatorStageReady {
-		g.NewGameInit()
-	} else {
-		g.CurStage = newStatus
-		g.curStateStartTime = time.Now().UnixMilli()
-	}
+	g.CurStage = newStatus
+	g.curStateStartTime = time.Now().UnixMilli()
 
-	g.S2cChangeState(newStatus)
+	g.S2cChangeState(g.CurStage)
 }
 
 func (g *AviatorGameContext) OnTick() {
 	now := time.Now().UnixMilli()
-	println("onTick ", now, g.curStateStartTime, now-g.curStateStartTime, BET_TIME.Milliseconds(), "stage=", g.CurStage)
+	interval := now - g.curStateStartTime
 
+	println("onTick ", now, interval, "stage=", g.CurStage)
 	switch g.CurStage {
+	case EAviatorStageZero:
+		g.UpdateStatus(EAviatorStageBet)
 	case EAviatorStageBet:
 		{
-			if now-g.curStateStartTime > BET_TIME.Milliseconds() {
-				g.UpdateStatus(EAviatorStageCashOut, EAviatorStageBet)
+			if interval > BET_TIME.Milliseconds() {
+				g.UpdateStatus(EAviatorStageCashOut)
 			} else {
 				g.S2cUpdateCurrentBets()
 			}
 		}
 	case EAviatorStageCashOut:
 		{
-			if now-g.curStateStartTime > CASH_OUT_TIME.Milliseconds()+AWARD_TIME.Microseconds() {
-				g.UpdateStatus(EAviatorStageReady, EAviatorStageCashOut)
-			} else if now-g.curStateStartTime > CASH_OUT_TIME.Milliseconds() {
-				if !g.IsAwarding {
-					g.IsAwarding = true
-					g.S2cRoundChartInfo()
-				}
+			if interval > AWARD_TIME.Milliseconds()+CASH_OUT_TIME.Milliseconds() {
+				g.DoStart()
+				g.UpdateStatus(EAviatorStageBet)
+			}
+			if interval > CASH_OUT_TIME.Milliseconds() {
+				g.S2cUpdateCrashX()
+				g.S2cRoundChartInfo()
+				g.DoSettle()
 			} else {
-				g.CurMultiplier = g.CurMultiplier + 0.1
+				g.CurMultiplier = g.CurMultiplier + 0.15
 				g.S2cUpdateCurrentCashOuts()
 				g.S2cUpdateX()
 			}
 		}
-	case EAviatorStageReady:
-		{
-			if now-g.curStateStartTime > READY_TIME.Milliseconds() {
-				g.UpdateStatus(EAviatorStageBet, EAviatorStageReady)
-			}
-		}
 	}
-	g.S2cOnlinePlayers()
+	//g.S2cOnlinePlayers()
+}
+
+func (g *AviatorGameContext) DoStart() {
+	g.NewGameInit()
+}
+
+func (g *AviatorGameContext) DoSettle() {
+	//清空下注
+	for _, player := range g.players {
+		player.BetList = []*PlayerBetSt{}
+	}
+
 }
 
 // StartTimer 启动定时器
