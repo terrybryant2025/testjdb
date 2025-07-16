@@ -63,6 +63,7 @@ type AviatorGameContext struct {
 	CurMultiplier     float64
 
 	CashOuts     []CashOut
+	LastBets     []Bet
 	TotalCashOut float64
 	TotalBet     float64
 	IsAwarding   bool
@@ -117,6 +118,7 @@ func (g *AviatorGameContext) NewGameInit() {
 	g.TotalCashOut = 0
 	g.CurMultiplier = 1.0
 	g.CashOuts = make([]CashOut, 0)
+	g.LastBets = make([]Bet, 0)
 	g.IsAwarding = false
 }
 
@@ -218,6 +220,18 @@ func (g *AviatorGameContext) C2sBet(conn *websocket.Conn, req *BetRequest) {
 		Username:     playerInfo.Nickname,
 	}
 
+	g.LastBets = append(g.LastBets, Bet{
+		Bet:          req.Bet,
+		BetID:        req.BetID,
+		IsFreeBet:    req.FreeBet,
+		PlayerID:     playerInfo.AccountId,
+		ProfileImage: playerInfo.ProfileImage,
+		Username:     playerInfo.Nickname,
+	})
+	if len(g.LastBets) > 50 {
+		g.LastBets = g.LastBets[1:]
+	}
+
 	result, _ := StructToMap(betResponse)
 	g.SendToClient(conn, "bet", result)
 }
@@ -287,6 +301,7 @@ func (g *AviatorGameContext) CurrentBetsInfo(conn *websocket.Conn) {
 	}
 
 	currentBetsInfo.CashOuts = append(currentBetsInfo.CashOuts, g.CashOuts...)
+	currentBetsInfo.Bets = append(currentBetsInfo.Bets, g.LastBets...)
 
 	result, _ := StructToMap(currentBetsInfo)
 	g.SendToClient(conn, "currentBetsInfo", result)
@@ -315,6 +330,8 @@ func (g *AviatorGameContext) S2cUpdateCurrentBets() {
 		Bets:                   []Bet{},
 		TopPlayerProfileImages: []string{},
 	}
+	ntf.Bets = append(ntf.Bets, g.LastBets...)
+
 	result, _ := StructToMap(ntf)
 	g.SendToAllClients("updateCurrentBets", result)
 }
