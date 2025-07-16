@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -503,6 +504,17 @@ func (g *AviatorGameContext) UpdateStatus(newStatus int32) {
 	g.S2cChangeState(g.CurStage)
 }
 
+func (g *AviatorGameContext) GenOdds(interval int64) float64 {
+	// 游戏阶段：更新倍数等
+
+	// 将tick转换为实际秒数 (tick * 0.1)
+	seconds := float64(interval/100) * 0.2
+	// 使用新公式: y = 0.9084 * exp(0.0752 * x)
+	odds := 0.99 * math.Exp(0.0752*seconds)
+	return odds
+
+}
+
 func (g *AviatorGameContext) OnTick() {
 	now := time.Now().UnixMilli()
 	interval := now - g.curStateStartTime
@@ -530,7 +542,10 @@ func (g *AviatorGameContext) OnTick() {
 				g.S2cRoundChartInfo()
 				g.DoSettle()
 			} else {
-				g.CurMultiplier = g.CurMultiplier + 0.15
+				g.CurMultiplier = g.GenOdds(interval)
+				if g.CurMultiplier < 1.01 {
+					g.CurMultiplier = 1.01
+				}
 				g.S2cUpdateCurrentCashOuts()
 				g.S2cUpdateX()
 			}
