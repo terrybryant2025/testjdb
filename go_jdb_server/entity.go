@@ -44,6 +44,16 @@ type BetRequest struct {
 	AutoCashOut float64 `json:"autoCashOut"`
 }
 
+type CancelBetRequest struct {
+	BetID int `json:"betId"`
+}
+
+type CancelBetResponse struct {
+	BetID    int    `json:"betId"`
+	Code     int    `json:"code"`
+	PlayerID string `json:"player_id"`
+}
+
 // BetResponse represents the bet response
 type BetResponse struct {
 	Bet          float64 `json:"bet"`

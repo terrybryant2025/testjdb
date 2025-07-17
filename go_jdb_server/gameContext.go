@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -11,9 +12,10 @@ import (
 )
 
 const (
-	EAviatorStageZero    = 0
-	EAviatorStageBet     = 1
-	EAviatorStageCashOut = 2
+	EAviatorStageZero         = 0
+	EAviatorStageBet          = 1
+	EAviatorStageCashOut      = 2
+	EAviatorStageCashOutAward = 3
 )
 
 const (
@@ -23,9 +25,11 @@ const (
 )
 
 type PlayerBetSt struct {
-	BetArea   int32
-	BetValue  float64
-	IsCashout bool
+	BetArea     int32
+	BetValue    float64
+	CashOut     float64
+	autoCashOut float64
+	hasCashOut  bool
 }
 
 type AviatorPlayerInfo struct {
@@ -44,6 +48,7 @@ type AviatorPlayerInfo struct {
 	IsOffline  bool    // 是否离线
 	Token      string  // 用户token
 	AutoBet    bool    // 是否自动下注
+	isRobot    bool    // 是否机器人
 
 	BetList []*PlayerBetSt
 
@@ -53,6 +58,7 @@ type AviatorPlayerInfo struct {
 
 type AviatorGameContext struct {
 	players map[string]*AviatorPlayerInfo
+	robots  map[string]*AviatorPlayerInfo
 
 	RecordId          int  // 牌局号(每次下一局累加1)
 	isRunning         bool // 是否已启动
@@ -100,6 +106,7 @@ func MapToStruct(data map[string]interface{}, result interface{}) error {
 func NewGameContext() *AviatorGameContext {
 	return &AviatorGameContext{
 		players:           make(map[string]*AviatorPlayerInfo, 0),
+		robots:            make(map[string]*AviatorPlayerInfo, 0),
 		curStateStartTime: 0,
 		CurStage:          int32(EAviatorStageZero),
 		CurMultiplier:     1.0,
@@ -133,6 +140,13 @@ func (g *AviatorGameContext) OnLogin(conn *websocket.Conn, obj map[string]interf
 }
 func (g *AviatorGameContext) OnRecv(conn *websocket.Conn, obj map[string]interface{}) {
 	switch obj["c"] {
+	case "cancelBetHandler":
+		var result CancelBetRequest
+		params, _ := obj["p"].(map[string]interface{})
+		if err := MapToStruct(params, &result); err != nil {
+			return
+		}
+		g.C2sCancelBet(conn, &result)
 	case "betHandler":
 		var result BetRequest
 		params, _ := obj["p"].(map[string]interface{})
@@ -184,6 +198,44 @@ func (g *AviatorGameContext) PreviousRoundInfo(c context.Context) {
 
 }
 */
+
+func (g *AviatorGameContext) C2sCancelBet(conn *websocket.Conn, req *CancelBetRequest) {
+	playerInfo := g.players[conn.RemoteAddr().String()]
+	if playerInfo == nil {
+		return
+	}
+
+	if g.CurStage != EAviatorStageBet {
+		return
+	}
+
+	if req.BetID <= 0 || req.BetID > 2 {
+		return
+	}
+
+	betSt := g.Id2Bet(int32(req.BetID), playerInfo)
+	if betSt == nil {
+		return
+	}
+
+	//扣钱
+	playerInfo.Balance -= betSt.BetValue
+	g.S2cNewBalance(playerInfo, playerInfo.Balance)
+	if g.TotalBet-betSt.BetValue > 0 {
+		g.TotalBet -= betSt.BetValue
+	}
+
+	g.CancelBet(int32(req.BetID), playerInfo)
+	rsp := &CancelBetResponse{
+		Code:     200,
+		PlayerID: playerInfo.AccountId,
+		BetID:    req.BetID,
+	}
+
+	result, _ := StructToMap(rsp)
+	g.SendToClient(playerInfo, "bet", result)
+}
+
 func (g *AviatorGameContext) C2sBet(conn *websocket.Conn, req *BetRequest) {
 	playerInfo := g.players[conn.RemoteAddr().String()]
 	if playerInfo == nil {
@@ -209,9 +261,11 @@ func (g *AviatorGameContext) C2sBet(conn *websocket.Conn, req *BetRequest) {
 
 	g.TotalBet += req.Bet
 	playerInfo.BetList = append(playerInfo.BetList, &PlayerBetSt{
-		BetArea:   int32(req.BetID),
-		BetValue:  req.Bet,
-		IsCashout: false,
+		BetArea:     int32(req.BetID),
+		BetValue:    req.Bet,
+		CashOut:     0,
+		autoCashOut: req.AutoCashOut,
+		hasCashOut:  false,
 	})
 
 	betResponse := &BetResponse{
@@ -249,10 +303,26 @@ func (g *AviatorGameContext) Id2Bet(betId int32, playerInfo *AviatorPlayerInfo) 
 	return nil
 }
 
-func (g *AviatorGameContext) SetCashOut(betId int32, playerInfo *AviatorPlayerInfo) {
+func (g *AviatorGameContext) CancelBet(betId int32, playerInfo *AviatorPlayerInfo) {
 	for idx, bet := range playerInfo.BetList {
 		if bet.BetArea == betId {
-			playerInfo.BetList[idx].IsCashout = true
+			playerInfo.BetList = append(playerInfo.BetList[:idx], playerInfo.BetList[idx+1:]...)
+			break
+		}
+	}
+	for idx, bet := range g.LastBets {
+		if int32(bet.BetID) == betId && playerInfo.AccountId == bet.PlayerID {
+			g.LastBets = append(g.LastBets[:idx], g.LastBets[idx+1:]...)
+			break
+		}
+	}
+}
+
+func (g *AviatorGameContext) SetCashOut(betId int32, cashOut float64, playerInfo *AviatorPlayerInfo) {
+	for idx, bet := range playerInfo.BetList {
+		if bet.BetArea == betId {
+			playerInfo.BetList[idx].hasCashOut = true
+			playerInfo.BetList[idx].CashOut = cashOut
 		}
 	}
 }
@@ -272,7 +342,7 @@ func (g *AviatorGameContext) C2sCashOut(conn *websocket.Conn, req *CashOutReques
 		return
 	}
 
-	if betSt.IsCashout {
+	if betSt.CashOut > 0 {
 		return
 	}
 	CurMultiplier := g.CurMultiplier
@@ -281,7 +351,7 @@ func (g *AviatorGameContext) C2sCashOut(conn *websocket.Conn, req *CashOutReques
 	playerInfo.Balance += betSt.BetValue * CurMultiplier
 	g.S2cNewBalance(playerInfo, playerInfo.Balance)
 
-	g.SetCashOut(int32(req.BetID), playerInfo)
+	g.SetCashOut(int32(req.BetID), betSt.BetValue*CurMultiplier, playerInfo)
 	g.TotalCashOut += betSt.BetValue * CurMultiplier
 	g.CashOuts = append(g.CashOuts, CashOut{
 		BetID:      req.BetID,
@@ -408,7 +478,7 @@ func (g *AviatorGameContext) OpenBetsCount() int {
 	openBetsCount := 0
 	for _, player := range g.players {
 		for _, bet := range player.BetList {
-			if bet.IsCashout {
+			if bet.hasCashOut {
 				continue
 			}
 			openBetsCount++
@@ -470,7 +540,7 @@ func (g *AviatorGameContext) SendToAllClients(cmd string, data map[string]interf
 
 	packet := BuildSFSMessage(13, 1, p)
 	for _, player := range g.players {
-		if player.IsOffline {
+		if player.IsOffline || player.isRobot {
 			continue
 		}
 
@@ -501,14 +571,19 @@ func (g *AviatorGameContext) UpdateStatus(newStatus int32) {
 	g.CurStage = newStatus
 	g.curStateStartTime = time.Now().UnixMilli()
 
-	g.S2cChangeState(g.CurStage)
+	// 服务端虚拟状态不用通知
+	if newStatus == EAviatorStageCashOutAward {
+		return
+	} else {
+		g.S2cChangeState(g.CurStage)
+	}
 }
 
 func (g *AviatorGameContext) GenOdds(interval int64) float64 {
 	// 游戏阶段：更新倍数等
 
 	// 将tick转换为实际秒数 (tick * 0.1)
-	seconds := float64(interval/100) * 0.2
+	seconds := float64(interval/200) * 0.2
 	// 使用新公式: y = 0.9084 * exp(0.0752 * x)
 	odds := 0.99 * math.Exp(0.0752*seconds)
 	return odds
@@ -528,42 +603,178 @@ func (g *AviatorGameContext) OnTick() {
 			if interval > BET_TIME.Milliseconds() {
 				g.UpdateStatus(EAviatorStageCashOut)
 			} else {
+				g.AutoRobotBet()
 				g.S2cUpdateCurrentBets()
 			}
 		}
 	case EAviatorStageCashOut:
 		{
-			if interval > AWARD_TIME.Milliseconds()+CASH_OUT_TIME.Milliseconds() {
-				g.DoStart()
-				g.UpdateStatus(EAviatorStageBet)
-			}
 			if interval > CASH_OUT_TIME.Milliseconds() {
-				g.S2cUpdateCrashX()
-				g.S2cRoundChartInfo()
 				g.DoSettle()
 			} else {
+				oldCurMultiplier := g.CurMultiplier
 				g.CurMultiplier = g.GenOdds(interval)
 				if g.CurMultiplier < 1.01 {
 					g.CurMultiplier = 1.01
 				}
-				g.S2cUpdateCurrentCashOuts()
-				g.S2cUpdateX()
+
+				//判断系统会不会输
+				sysWin := g.CacSysWin()
+				if sysWin < 0 {
+					g.CurMultiplier = oldCurMultiplier
+					g.DoSettle()
+				} else {
+					g.AutoRobotCashOut()
+					g.AutoCashOut()
+					g.S2cUpdateCurrentCashOuts()
+					g.S2cUpdateX()
+				}
+			}
+		}
+	case EAviatorStageCashOutAward:
+		{
+			if interval > CASH_OUT_TIME.Milliseconds() {
+				g.DoStart()
+				g.UpdateStatus(EAviatorStageBet)
 			}
 		}
 	}
-	//g.S2cOnlinePlayers()
+	g.S2cOnlinePlayers()
+}
+
+func (g *AviatorGameContext) DoSettle() {
+	g.S2cUpdateCrashX()
+	g.S2cRoundChartInfo()
+
+	//清空下注
+	for _, player := range g.players {
+		player.BetList = []*PlayerBetSt{}
+	}
+	g.robots = map[string]*AviatorPlayerInfo{}
+	g.UpdateStatus(EAviatorStageCashOutAward)
 }
 
 func (g *AviatorGameContext) DoStart() {
 	g.NewGameInit()
 }
 
-func (g *AviatorGameContext) DoSettle() {
-	//清空下注
+func (g *AviatorGameContext) AutoRobotBet() {
+	robotCount := rand.Intn(3) + 1
+
+	for i := 0; i < robotCount; i++ {
+		robot := g.CreateRobot()
+		betValue := rand.Float64() * 100
+		betId := rand.Intn(2) + 1
+
+		g.TotalBet += betValue
+		robot.BetList = append(robot.BetList, &PlayerBetSt{
+			BetArea:    int32(betId),
+			BetValue:   betValue,
+			CashOut:    0,
+			hasCashOut: false,
+		})
+
+		g.LastBets = append(g.LastBets, Bet{
+			Bet:          betValue,
+			BetID:        betId,
+			IsFreeBet:    false,
+			PlayerID:     robot.AccountId,
+			ProfileImage: robot.ProfileImage,
+			Username:     robot.Nickname,
+		})
+		if len(g.LastBets) > 50 {
+			g.LastBets = g.LastBets[1:]
+		}
+
+	}
+}
+
+func (g *AviatorGameContext) CreateRobot() *AviatorPlayerInfo {
+
+	rand.Seed(time.Now().UnixNano()) // 初始化随机种子
+
+	// 生成 100000-999999 之间的随机数
+	randomNum1 := rand.Intn(900000) + 100000
+	randomNum2 := rand.Intn(900000) + 100000
+
+	playerInfo := &AviatorPlayerInfo{
+		Balance:   0,
+		BetList:   make([]*PlayerBetSt, 0),
+		IsOffline: false,
+		AccountId: fmt.Sprint(randomNum1) + "&&demo",
+		Nickname:  "demo" + fmt.Sprint(randomNum2),
+	}
+	return playerInfo
+}
+
+func (g *AviatorGameContext) AutoRobotCashOut() {
+	for _, player := range g.robots {
+		for idx := range player.BetList {
+			bet := player.BetList[idx]
+			if bet.hasCashOut {
+				continue
+			}
+
+			player.BetList[idx].hasCashOut = true
+			player.BetList[idx].CashOut = bet.BetValue * g.CurMultiplier
+
+			g.TotalCashOut += bet.BetValue * g.CurMultiplier
+			g.CashOuts = append(g.CashOuts, CashOut{
+				BetID:      int(bet.BetArea),
+				Multiplier: g.CurMultiplier,
+				PlayerID:   player.AccountId,
+				WinAmount:  bet.BetValue * g.CurMultiplier,
+			})
+		}
+	}
+}
+
+func (g *AviatorGameContext) AutoCashOut() {
 	for _, player := range g.players {
+		if player.isRobot {
+			continue
+		}
+		for idx := range player.BetList {
+			bet := player.BetList[idx]
+			if bet.hasCashOut {
+				continue
+			}
+			if bet.autoCashOut > 1 {
+				player.Balance += bet.BetValue * g.CurMultiplier
+				g.SetCashOut(int32(bet.BetArea), bet.BetValue*g.CurMultiplier, player)
+				g.TotalCashOut += bet.BetValue * g.CurMultiplier
+				g.CashOuts = append(g.CashOuts, CashOut{
+					BetID:      int(bet.BetArea),
+					Multiplier: g.CurMultiplier,
+					PlayerID:   player.AccountId,
+					WinAmount:  bet.BetValue * g.CurMultiplier,
+				})
+				if player.isRobot || player.IsOffline {
+					continue
+				}
+				g.S2cNewBalance(player, player.Balance)
+			}
+		}
+
 		player.BetList = []*PlayerBetSt{}
 	}
+}
 
+func (g *AviatorGameContext) CacSysWin() float64 {
+	totalBet := 0.0
+	totalCashOut := 0.0
+	for _, player := range g.players {
+		if player.isRobot {
+			continue
+		}
+		for _, bet := range player.BetList {
+			totalBet += bet.BetValue
+			if bet.hasCashOut {
+				totalCashOut += bet.CashOut
+			}
+		}
+	}
+	return totalBet - totalCashOut
 }
 
 // StartTimer 启动定时器
