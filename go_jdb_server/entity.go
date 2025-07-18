@@ -318,3 +318,51 @@ type PreviousRoundInfo struct {
 	Code      int       `json:"code"`
 	Bets      []Bet     `json:"bets"`
 }
+
+type TopWinsResponse struct {
+	Code    int      `json:"code"`
+	TopWins []TopWin `json:"topWins"`
+}
+
+type TopWin struct {
+	MaxMultiplier           float64 `json:"maxMultiplier"`
+	WinAmount               float64 `json:"winAmount"`
+	EndDate                 int64   `json:"endDate"` // 毫秒时间戳
+	Payout                  float64 `json:"payout"`
+	IsFreeBet               bool    `json:"isFreeBet"`
+	ProfileImage            string  `json:"profileImage"`
+	Bet                     float64 `json:"bet"`
+	RoundBetId              int64   `json:"roundBetId"`
+	WinAmountInMainCurrency float64 `json:"winAmountInMainCurrency"`
+	Zone                    string  `json:"zone"`
+	Currency                string  `json:"currency"`
+	RoundId                 int     `json:"roundId"`
+	PlayerId                int     `json:"playerId"`
+	Username                string  `json:"username"`
+}
+
+type TopRoundsResponse struct {
+	Code      int        `json:"code"`
+	TopRounds []TopRound `json:"topRounds"`
+}
+
+type TopRound struct {
+	MaxMultiplier  float64 `json:"maxMultiplier"`
+	EndDate        int64   `json:"endDate"` // 毫秒时间戳
+	Zone           string  `json:"zone"`
+	RoundStartDate int64   `json:"roundStartDate"` // 毫秒时间戳
+	RoundId        int     `json:"roundId"`
+	ServerSeed     string  `json:"serverSeed"`
+}
+
+type TopWinRequest struct {
+	Period string `json:"period"`
+}
+
+type TopRoundRequest struct {
+	Period string `json:"period"`
+}
+
+type HugeWinRequest struct {
+	Period string `json:"period"`
+}

@@ -173,10 +173,27 @@ func (g *AviatorGameContext) OnRecv(conn *websocket.Conn, obj map[string]interfa
 		g.C2sCurrentBetsInfo(conn)
 	case "previousRoundInfoHandler":
 		g.C2sPreviousRoundInfo(conn)
-	case "getHugeWinsInfo":
-	case "getTopRoundsInfo":
-	case "getTopWinsInfo":
-	case "betHistory":
+	case "getHugeWinsInfoHandler":
+		var result HugeWinRequest
+		params, _ := obj["p"].(map[string]interface{})
+		if err := MapToStruct(params, &result); err != nil {
+			return
+		}
+		g.C2sGetHugeWinsInfo(conn, &result)
+	case "getTopRoundsInfoHandler":
+		var result TopRoundRequest
+		params, _ := obj["p"].(map[string]interface{})
+		if err := MapToStruct(params, &result); err != nil {
+			return
+		}
+		g.C2sGtTopRoundsInfo(conn, &result)
+	case "getTopWinsInfoHandler":
+		var result TopWinRequest
+		params, _ := obj["p"].(map[string]interface{})
+		if err := MapToStruct(params, &result); err != nil {
+			return
+		}
+		g.C2sGetTopWinsInfo(conn, &result)
 	default:
 		fmt.Printf("⚠️ 未知扩展命令: %s\n", obj["c"])
 	}
@@ -191,17 +208,6 @@ func (g *AviatorGameContext) RoundFairness(conn *websocket.Conn) {
 
 }
 
-func (g *AviatorGameContext) getHugeWinsInfo(c context.Context) {
-
-}
-
-func (g *AviatorGameContext) getTopWinsInfo(c context.Context) {
-
-}
-
-func (g *AviatorGameContext) getTopRoundsInfo(c context.Context) {
-
-}
 */
 
 func (g *AviatorGameContext) C2sCancelBet(conn *websocket.Conn, req *CancelBetRequest) {
@@ -400,6 +406,91 @@ func (g *AviatorGameContext) C2sCashOut(conn *websocket.Conn, req *CashOutReques
 
 }
 
+func (g *AviatorGameContext) C2sGetHugeWinsInfo(conn *websocket.Conn, req *HugeWinRequest) {
+	playerInfo := g.players[conn.RemoteAddr().String()]
+	if playerInfo == nil {
+		return
+	}
+	topWinsResponse := TopWinsResponse{
+		Code:    200,
+		TopWins: []TopWin{},
+	}
+
+	topWinsResponse.TopWins = append(topWinsResponse.TopWins, TopWin{
+		MaxMultiplier:           755.02,
+		WinAmount:               7229509.53,
+		EndDate:                 1752791583350,
+		Payout:                  100,
+		IsFreeBet:               false,
+		ProfileImage:            "av-5.png",
+		Bet:                     72295.09,
+		RoundBetId:              2969720161,
+		WinAmountInMainCurrency: 799938,
+		Zone:                    "aviator_core_inst2_demo1",
+		Currency:                "MAD",
+		RoundId:                 8280205,
+		PlayerId:                2053967,
+		Username:                "demo_24529",
+	})
+
+	result, _ := StructToMap(topWinsResponse)
+	g.SendToClient(playerInfo, "getHugeWinsInfo", result)
+}
+
+func (g *AviatorGameContext) C2sGetTopWinsInfo(conn *websocket.Conn, req *TopWinRequest) {
+	playerInfo := g.players[conn.RemoteAddr().String()]
+	if playerInfo == nil {
+		return
+	}
+	topWinsResponse := TopWinsResponse{
+		Code:    200,
+		TopWins: []TopWin{},
+	}
+
+	topWinsResponse.TopWins = append(topWinsResponse.TopWins, TopWin{
+		MaxMultiplier:           755.02,
+		WinAmount:               7229509.53,
+		EndDate:                 1752791583350,
+		Payout:                  100,
+		IsFreeBet:               false,
+		ProfileImage:            "av-5.png",
+		Bet:                     72295.09,
+		RoundBetId:              2969720161,
+		WinAmountInMainCurrency: 799938,
+		Zone:                    "aviator_core_inst2_demo1",
+		Currency:                "MAD",
+		RoundId:                 8280205,
+		PlayerId:                2053967,
+		Username:                "demo_24529",
+	})
+
+	result, _ := StructToMap(topWinsResponse)
+	g.SendToClient(playerInfo, "getTopWinsInfo", result)
+}
+
+func (g *AviatorGameContext) C2sGtTopRoundsInfo(conn *websocket.Conn, req *TopRoundRequest) {
+	playerInfo := g.players[conn.RemoteAddr().String()]
+	if playerInfo == nil {
+		return
+	}
+	topRoundResponse := TopRoundsResponse{
+		Code:      200,
+		TopRounds: []TopRound{},
+	}
+
+	topRoundResponse.TopRounds = append(topRoundResponse.TopRounds, TopRound{
+		RoundId:        1,
+		RoundStartDate: 1638300000,
+		EndDate:        1638300000 + 1000,
+		MaxMultiplier:  1.5,
+		ServerSeed:     "serverSeed",
+		Zone:           "zone",
+	})
+
+	result, _ := StructToMap(topRoundResponse)
+	g.SendToClient(playerInfo, "getTopRoundsInfo", result)
+}
+
 func (g *AviatorGameContext) C2sPreviousRoundInfo(conn *websocket.Conn) {
 	playerInfo := g.players[conn.RemoteAddr().String()]
 	if playerInfo == nil {
@@ -512,7 +603,8 @@ func (g *AviatorGameContext) OnlinePlayers() int {
 			onlinePlayers++
 		}
 	}
-	return onlinePlayers
+
+	return onlinePlayers + len(g.robots)
 }
 
 func (g *AviatorGameContext) OpenBetsCount() int {
