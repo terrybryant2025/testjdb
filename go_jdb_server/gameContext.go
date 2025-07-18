@@ -68,9 +68,14 @@ type AviatorGameContext struct {
 	CurMultiplier     float64
 
 	CashOuts     []CashOut
+	CurrentBets  []Bet
 	LastBets     []Bet
 	TotalCashOut float64
 	TotalBet     float64
+
+	startTime     int64
+	endTime       int64
+	LastRoundInfo RoundInfo
 }
 
 func StructToMap(obj interface{}) (map[string]interface{}, error) {
@@ -110,6 +115,8 @@ func NewGameContext() *AviatorGameContext {
 		curStateStartTime: 0,
 		CurStage:          int32(EAviatorStageZero),
 		CurMultiplier:     1.0,
+		startTime:         0,
+		endTime:           0,
 	}
 }
 func (g *AviatorGameContext) Init() {
@@ -123,7 +130,7 @@ func (g *AviatorGameContext) NewGameInit() {
 	g.TotalCashOut = 0
 	g.CurMultiplier = 1.0
 	g.CashOuts = make([]CashOut, 0)
-	g.LastBets = make([]Bet, 0)
+	g.CurrentBets = make([]Bet, 0)
 	g.RecordId = g.RecordId + 1
 }
 
@@ -135,6 +142,7 @@ func (g *AviatorGameContext) OnLogin(conn *websocket.Conn, obj map[string]interf
 		IsOffline: false,
 		AccountId: "33687&&demo",
 		Nickname:  "demo_71815",
+		Currency:  "MAD",
 	}
 	g.players[conn.RemoteAddr().String()] = playerInfo
 }
@@ -163,7 +171,8 @@ func (g *AviatorGameContext) OnRecv(conn *websocket.Conn, obj map[string]interfa
 		g.C2sCashOut(conn, &result)
 	case "currentBetsInfoHandler":
 		g.C2sCurrentBetsInfo(conn)
-	case "previousRoundInfo":
+	case "previousRoundInfoHandler":
+		g.C2sPreviousRoundInfo(conn)
 	case "getHugeWinsInfo":
 	case "getTopRoundsInfo":
 	case "getTopWinsInfo":
@@ -191,10 +200,6 @@ func (g *AviatorGameContext) getTopWinsInfo(c context.Context) {
 }
 
 func (g *AviatorGameContext) getTopRoundsInfo(c context.Context) {
-
-}
-
-func (g *AviatorGameContext) PreviousRoundInfo(c context.Context) {
 
 }
 */
@@ -233,7 +238,7 @@ func (g *AviatorGameContext) C2sCancelBet(conn *websocket.Conn, req *CancelBetRe
 	}
 
 	result, _ := StructToMap(rsp)
-	g.SendToClient(playerInfo, "bet", result)
+	g.SendToClient(playerInfo, "cancelBet", result)
 }
 
 func (g *AviatorGameContext) C2sBet(conn *websocket.Conn, req *BetRequest) {
@@ -278,16 +283,21 @@ func (g *AviatorGameContext) C2sBet(conn *websocket.Conn, req *BetRequest) {
 		Username:     playerInfo.Nickname,
 	}
 
-	g.LastBets = append(g.LastBets, Bet{
+	g.CurrentBets = append(g.CurrentBets, Bet{
 		Bet:          req.Bet,
 		BetID:        req.BetID,
 		IsFreeBet:    req.FreeBet,
 		PlayerID:     playerInfo.AccountId,
 		ProfileImage: playerInfo.ProfileImage,
 		Username:     playerInfo.Nickname,
+		Currency:     playerInfo.Currency,
+		Payout:       0,
+		WinAmount:    0,
+		Win:          false,
+		RoundBetId:   req.BetID,
 	})
-	if len(g.LastBets) > 50 {
-		g.LastBets = g.LastBets[1:]
+	if len(g.CurrentBets) > 50 {
+		g.CurrentBets = g.CurrentBets[1:]
 	}
 
 	result, _ := StructToMap(betResponse)
@@ -310,20 +320,30 @@ func (g *AviatorGameContext) CancelBet(betId int32, playerInfo *AviatorPlayerInf
 			break
 		}
 	}
-	for idx, bet := range g.LastBets {
+	for idx, bet := range g.CurrentBets {
 		if int32(bet.BetID) == betId && playerInfo.AccountId == bet.PlayerID {
-			g.LastBets = append(g.LastBets[:idx], g.LastBets[idx+1:]...)
+			g.CurrentBets = append(g.CurrentBets[:idx], g.CurrentBets[idx+1:]...)
 			break
 		}
 	}
 }
 
-func (g *AviatorGameContext) SetCashOut(betId int32, cashOut float64, playerInfo *AviatorPlayerInfo) {
+func (g *AviatorGameContext) SetCashOut(betId int32, betValue float64, curMultiplier float64, playerInfo *AviatorPlayerInfo) {
 	for idx, bet := range playerInfo.BetList {
 		if bet.BetArea == betId {
 			playerInfo.BetList[idx].hasCashOut = true
-			playerInfo.BetList[idx].CashOut = cashOut
+			playerInfo.BetList[idx].CashOut = betValue * curMultiplier
 		}
+	}
+
+	for idx, bet := range g.CurrentBets {
+		if int32(bet.BetID) == betId && playerInfo.AccountId == bet.PlayerID {
+			g.CurrentBets[idx].Payout = g.CurMultiplier
+			g.CurrentBets[idx].WinAmount = betValue * curMultiplier
+			g.CurrentBets[idx].Win = true
+			break
+		}
+
 	}
 }
 
@@ -351,7 +371,7 @@ func (g *AviatorGameContext) C2sCashOut(conn *websocket.Conn, req *CashOutReques
 	playerInfo.Balance += betSt.BetValue * CurMultiplier
 	g.S2cNewBalance(playerInfo, playerInfo.Balance)
 
-	g.SetCashOut(int32(req.BetID), betSt.BetValue*CurMultiplier, playerInfo)
+	g.SetCashOut(int32(req.BetID), betSt.BetValue, CurMultiplier, playerInfo)
 	g.TotalCashOut += betSt.BetValue * CurMultiplier
 	g.CashOuts = append(g.CashOuts, CashOut{
 		BetID:      req.BetID,
@@ -380,14 +400,34 @@ func (g *AviatorGameContext) C2sCashOut(conn *websocket.Conn, req *CashOutReques
 
 }
 
+func (g *AviatorGameContext) C2sPreviousRoundInfo(conn *websocket.Conn) {
+	playerInfo := g.players[conn.RemoteAddr().String()]
+	if playerInfo == nil {
+		return
+	}
+
+	previousRoundInfo := &PreviousRoundInfo{
+		Bets: []Bet{},
+		Code: 200,
+		RoundInfo: RoundInfo{
+			RoundId:        g.RecordId,
+			Multiplier:     g.CurMultiplier,
+			RoundStartDate: g.startTime,
+			RoundEndDate:   g.endTime,
+		},
+	}
+
+	previousRoundInfo.Bets = append(previousRoundInfo.Bets, g.LastBets...)
+	result, _ := StructToMap(previousRoundInfo)
+	g.SendToClient(playerInfo, "previousRoundInfoResponse", result)
+}
+
 func (g *AviatorGameContext) C2sCurrentBetsInfo(conn *websocket.Conn) {
 	playerInfo := g.players[conn.RemoteAddr().String()]
 	if playerInfo == nil {
 		return
 	}
-	g.CurrentBetsInfo(playerInfo)
-}
-func (g *AviatorGameContext) CurrentBetsInfo(player *AviatorPlayerInfo) {
+
 	currentBetsInfo := &CurrentBetsInfo{
 		BetsCount:              g.BetsCount(),
 		OpenBetsCount:          g.OpenBetsCount(),
@@ -400,10 +440,11 @@ func (g *AviatorGameContext) CurrentBetsInfo(player *AviatorPlayerInfo) {
 	}
 
 	currentBetsInfo.CashOuts = append(currentBetsInfo.CashOuts, g.CashOuts...)
-	currentBetsInfo.Bets = append(currentBetsInfo.Bets, g.LastBets...)
+	currentBetsInfo.Bets = append(currentBetsInfo.Bets, g.CurrentBets...)
 
 	result, _ := StructToMap(currentBetsInfo)
-	g.SendToClient(player, "currentBetsInfo", result)
+	g.SendToClient(playerInfo, "currentBetsInfo", result)
+
 }
 
 func (g *AviatorGameContext) S2cUpdateCurrentCashOuts() {
@@ -429,7 +470,7 @@ func (g *AviatorGameContext) S2cUpdateCurrentBets() {
 		Bets:                   []Bet{},
 		TopPlayerProfileImages: []string{},
 	}
-	ntf.Bets = append(ntf.Bets, g.LastBets...)
+	ntf.Bets = append(ntf.Bets, g.CurrentBets...)
 
 	result, _ := StructToMap(ntf)
 	g.SendToAllClients("updateCurrentBets", result)
@@ -643,6 +684,8 @@ func (g *AviatorGameContext) OnTick() {
 }
 
 func (g *AviatorGameContext) DoSettle() {
+
+	println("DoSettle")
 	g.S2cUpdateCrashX()
 	g.S2cRoundChartInfo()
 
@@ -652,14 +695,25 @@ func (g *AviatorGameContext) DoSettle() {
 	}
 	g.robots = map[string]*AviatorPlayerInfo{}
 	g.UpdateStatus(EAviatorStageCashOutAward)
+	g.endTime = time.Now().UnixMilli()
+
+	g.LastRoundInfo = RoundInfo{
+		RoundId:        g.RecordId,
+		RoundStartDate: g.startTime,
+		RoundEndDate:   g.endTime,
+		Multiplier:     g.CurMultiplier,
+	}
 }
 
 func (g *AviatorGameContext) DoStart() {
+	g.LastBets = make([]Bet, len(g.CurrentBets))
+	copy(g.LastBets, g.CurrentBets)
 	g.NewGameInit()
+	g.startTime = time.Now().UnixMilli()
 }
 
 func (g *AviatorGameContext) AutoRobotBet() {
-	robotCount := rand.Intn(3) + 1
+	robotCount := rand.Intn(2) + 1
 
 	for i := 0; i < robotCount; i++ {
 		robot := g.CreateRobot()
@@ -668,24 +722,29 @@ func (g *AviatorGameContext) AutoRobotBet() {
 
 		g.TotalBet += betValue
 		robot.BetList = append(robot.BetList, &PlayerBetSt{
-			BetArea:    int32(betId),
-			BetValue:   betValue,
-			CashOut:    0,
-			hasCashOut: false,
+			BetArea:     int32(betId),
+			BetValue:    betValue,
+			CashOut:     0,
+			hasCashOut:  false,
+			autoCashOut: (rand.Float64()*float64(rand.Intn(2)) + 1),
 		})
 
-		g.LastBets = append(g.LastBets, Bet{
+		g.CurrentBets = append(g.CurrentBets, Bet{
 			Bet:          betValue,
 			BetID:        betId,
 			IsFreeBet:    false,
 			PlayerID:     robot.AccountId,
 			ProfileImage: robot.ProfileImage,
 			Username:     robot.Nickname,
+			Payout:       0,
+			WinAmount:    0,
+			Win:          false,
+			RoundBetId:   betId,
 		})
-		if len(g.LastBets) > 50 {
-			g.LastBets = g.LastBets[1:]
+		if len(g.CurrentBets) > 50 {
+			g.CurrentBets = g.CurrentBets[1:]
 		}
-
+		g.robots[robot.AccountId] = robot
 	}
 }
 
@@ -714,9 +773,10 @@ func (g *AviatorGameContext) AutoRobotCashOut() {
 			if bet.hasCashOut {
 				continue
 			}
-
-			player.BetList[idx].hasCashOut = true
-			player.BetList[idx].CashOut = bet.BetValue * g.CurMultiplier
+			if bet.autoCashOut >= g.CurMultiplier {
+				continue
+			}
+			g.SetCashOut(int32(bet.BetArea), bet.BetValue, g.CurMultiplier, player)
 
 			g.TotalCashOut += bet.BetValue * g.CurMultiplier
 			g.CashOuts = append(g.CashOuts, CashOut{
@@ -731,9 +791,6 @@ func (g *AviatorGameContext) AutoRobotCashOut() {
 
 func (g *AviatorGameContext) AutoCashOut() {
 	for _, player := range g.players {
-		if player.isRobot {
-			continue
-		}
 		for idx := range player.BetList {
 			bet := player.BetList[idx]
 			if bet.hasCashOut {
@@ -741,7 +798,7 @@ func (g *AviatorGameContext) AutoCashOut() {
 			}
 			if bet.autoCashOut > 1 {
 				player.Balance += bet.BetValue * g.CurMultiplier
-				g.SetCashOut(int32(bet.BetArea), bet.BetValue*g.CurMultiplier, player)
+				g.SetCashOut(int32(bet.BetArea), bet.BetValue, g.CurMultiplier, player)
 				g.TotalCashOut += bet.BetValue * g.CurMultiplier
 				g.CashOuts = append(g.CashOuts, CashOut{
 					BetID:      int(bet.BetArea),
@@ -749,14 +806,12 @@ func (g *AviatorGameContext) AutoCashOut() {
 					PlayerID:   player.AccountId,
 					WinAmount:  bet.BetValue * g.CurMultiplier,
 				})
-				if player.isRobot || player.IsOffline {
+				if player.IsOffline {
 					continue
 				}
 				g.S2cNewBalance(player, player.Balance)
 			}
 		}
-
-		player.BetList = []*PlayerBetSt{}
 	}
 }
 
@@ -764,9 +819,6 @@ func (g *AviatorGameContext) CacSysWin() float64 {
 	totalBet := 0.0
 	totalCashOut := 0.0
 	for _, player := range g.players {
-		if player.isRobot {
-			continue
-		}
 		for _, bet := range player.BetList {
 			totalBet += bet.BetValue
 			if bet.hasCashOut {

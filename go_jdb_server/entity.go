@@ -142,8 +142,10 @@ type ResponseItem struct {
 }
 
 type RoundInfo struct {
-	MaxMultiplier float64 `json:"maxMultiplier"`
-	RoundID       int     `json:"roundId"`
+	Multiplier     float64 `json:"multiplier"`
+	RoundStartDate int64   `json:"roundStartDate"` // 毫秒时间戳
+	RoundEndDate   int64   `json:"roundEndDate"`   // 毫秒时间戳
+	RoundId        int     `json:"roundId"`
 }
 
 type Settings struct {
@@ -286,6 +288,10 @@ type Bet struct {
 	Currency     string  `json:"currency"`
 	ProfileImage string  `json:"profileImage"`
 	Username     string  `json:"username"`
+	Win          bool    `json:"win"`
+	RoundBetId   int     `json:"roundBetId"`
+	WinAmount    float64 `json:"winAmount"`
+	Payout       float64 `json:"payout"`
 }
 
 type UpdateCurrentBets struct {
@@ -305,4 +311,10 @@ type UpdateCrashX struct {
 	Code   int     `json:"code"`
 	CrashX float64 `json:"crashX"`
 	X      float64 `json:"x"`
+}
+
+type PreviousRoundInfo struct {
+	RoundInfo RoundInfo `json:"roundInfo"`
+	Code      int       `json:"code"`
+	Bets      []Bet     `json:"bets"`
 }
